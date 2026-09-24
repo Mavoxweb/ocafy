@@ -1,39 +1,53 @@
 import {
   boolean,
+  index,
   integer,
   pgTable,
+  real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
-// Households
+/**
+ * Regras do modelo:
+ * - Tudo é escopado por `household_id` e apagado em cascata com a casa.
+ * - Tarefas vivem no catálogo do `@ocafy/core`; aqui guardamos só o que muda
+ *   por casa (`task_overrides`) e o histórico (`completions`, por `task_key`).
+ * - XP, nível e moedas são derivados das conclusões/compras (nunca gravados).
+ * - Os ids podem ser gerados pelo cliente (uuid) para permitir UI otimista.
+ */
+
 export const households = pgTable("households", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Household Members
-export const householdMembers = pgTable("household_members", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  userId: text("user_id").notNull(), // Linked to Neon Auth user ID
-  displayName: text("display_name").notNull(),
-  role: text("role", { enum: ["owner", "member"] })
-    .default("member")
-    .notNull(),
-  color: text("color").default("#FFB7C5").notNull(),
-  totalXp: integer("total_xp").default(0).notNull(),
-  coins: integer("coins").default(0).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+/** Uma conta (Neon Auth) pertence a no máximo uma casa; casal = até 2 membros. */
+export const householdMembers = pgTable(
+  "household_members",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: text("user_id").notNull(), // id do usuário no Neon Auth
+    displayName: text("display_name").notNull(),
+    role: text("role", { enum: ["owner", "member"] })
+      .default("member")
+      .notNull(),
+    slot: text("slot", { enum: ["a", "b"] }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("household_members_user_uq").on(t.userId),
+    uniqueIndex("household_members_slot_uq").on(t.householdId, t.slot),
+  ],
+);
 
-// Invites
 export const invites = pgTable("invites", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
@@ -41,98 +55,83 @@ export const invites = pgTable("invites", {
     .notNull(),
   code: text("code").unique().notNull(),
   expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Rooms
-export const rooms = pgTable("rooms", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  slug: text("slug").notNull(),
-  name: text("name").notNull(),
-  icon: text("icon"),
-  order: integer("order").default(0).notNull(),
-});
+/** Cômodos ativos da casa (slug = RoomId do core). */
+export const rooms = pgTable(
+  "rooms",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    slug: text("slug").notNull(),
+  },
+  (t) => [uniqueIndex("rooms_household_slug_uq").on(t.householdId, t.slug)],
+);
 
-// Global Task Templates (catalog)
-export const taskTemplates = pgTable("task_templates", {
-  id: text("id").primaryKey(),
-  title: text("title").notNull(),
-  roomSlug: text("room_slug").notNull(),
-  category: text("category").notNull(),
-  type: text("type", { enum: ["routine", "recurring"] }).notNull(),
-  routineType: text("routine_type", { enum: ["manha", "noite"] }),
-  minDays: integer("min_days"),
-  maxDays: integer("max_days"),
-  mins: integer("mins").notNull(),
-  suggestedDay: integer("suggested_day"),
-  howTo: text("how_to"),
-});
+/** Ajustes por casa sobre o catálogo: janela de dias e pausa. */
+export const taskOverrides = pgTable(
+  "task_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    taskKey: text("task_key").notNull(),
+    minDays: integer("min_days"),
+    maxDays: integer("max_days"),
+    isPaused: boolean("is_paused").default(false).notNull(),
+  },
+  (t) => [uniqueIndex("task_overrides_uq").on(t.householdId, t.taskKey)],
+);
 
-// Household Tasks
-export const householdTasks = pgTable("household_tasks", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  templateId: text("template_id").references(() => taskTemplates.id),
-  title: text("title").notNull(),
-  roomSlug: text("room_slug").notNull(),
-  category: text("category").notNull(),
-  type: text("type", { enum: ["routine", "recurring"] }).notNull(),
-  routineType: text("routine_type", { enum: ["manha", "noite"] }),
-  minDays: integer("min_days").default(1).notNull(),
-  maxDays: integer("max_days").default(7).notNull(),
-  mins: integer("mins").default(10).notNull(),
-  suggestedDay: integer("suggested_day"),
-  isPaused: boolean("is_paused").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const completions = pgTable(
+  "completions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    taskKey: text("task_key").notNull(),
+    completedBy: uuid("completed_by")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    completedAt: timestamp("completed_at").notNull(),
+    pointsAwarded: integer("points_awarded").notNull(),
+    note: text("note"),
+    dateKey: varchar("date_key", { length: 10 }).notNull(), // YYYY-MM-DD
+  },
+  (t) => [
+    index("completions_household_at_idx").on(t.householdId, t.completedAt),
+  ],
+);
 
-// Completions
-export const completions = pgTable("completions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  taskId: uuid("task_id")
-    .references(() => householdTasks.id, { onDelete: "cascade" })
-    .notNull(),
-  completedBy: uuid("completed_by")
-    .references(() => householdMembers.id)
-    .notNull(),
-  completedAt: timestamp("completed_at").notNull(),
-  pointsAwarded: integer("points_awarded").notNull(),
-  note: text("note"),
-  dateKey: varchar("date_key", { length: 10 }).notNull(), // YYYY-MM-DD
-});
-
-// Meals
-export const meals = pgTable("meals", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  dateKey: varchar("date_key", { length: 10 }).notNull(),
-  slot: text("slot", { enum: ["almoco", "jantar"] }).notNull(),
-  dishName: text("dish_name").notNull(),
-  proteinKey: text("protein_key").notNull(),
-  defrostHours: integer("defrost_hours").default(24).notNull(),
-  pulledBy: uuid("pulled_by").references(() => householdMembers.id),
-  cookedBy: uuid("cooked_by").references(() => householdMembers.id),
-});
-
-// Pets & Litter
-export const pets = pgTable("pets", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  name: text("name").notNull(),
-  species: text("species", { enum: ["cat", "dog", "other"] }).notNull(),
-});
+export const meals = pgTable(
+  "meals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    dateKey: varchar("date_key", { length: 10 }).notNull(),
+    slot: text("slot", { enum: ["almoco", "jantar"] }).notNull(),
+    dishName: text("dish_name").notNull(),
+    proteinKey: text("protein_key").notNull(),
+    createdBy: uuid("created_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    pulledBy: uuid("pulled_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    cookedBy: uuid("cooked_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [index("meals_household_date_idx").on(t.householdId, t.dateKey)],
+);
 
 export const litterSettings = pgTable("litter_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -142,49 +141,56 @@ export const litterSettings = pgTable("litter_settings", {
     .notNull(),
   catsCount: integer("cats_count").default(3).notNull(),
   boxesCount: integer("boxes_count").default(2).notNull(),
-  kgPerBox: integer("kg_per_box").default(4).notNull(),
-  bagKg: integer("bag_kg").default(4).notNull(),
+  kgPerBox: real("kg_per_box").default(4).notNull(),
+  bagKg: real("bag_kg").default(4).notNull(),
   minDays: integer("min_days").default(5).notNull(),
   maxDays: integer("max_days").default(7).notNull(),
-  stockBags: integer("stock_bags").default(10).notNull(),
+  /** null = ainda não informado */
+  stockBags: integer("stock_bags"),
 });
 
-// Projects & Goals
-export const projects = pgTable("projects", {
+/** Projeto Escritório: estado por casa (objetivos e etapas vêm do catálogo). */
+export const officeProjects = pgTable("office_projects", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
     .references(() => households.id, { onDelete: "cascade" })
+    .unique()
     .notNull(),
-  title: text("title").notNull(),
-  description: text("description"),
-  totalWeeks: integer("total_weeks").default(9).notNull(),
-  startedAt: timestamp("started_at"),
-  isCompleted: boolean("is_completed").default(false).notNull(),
+  startDate: varchar("start_date", { length: 10 }).notNull(), // segunda-feira
 });
 
-export const projectGoals = pgTable("project_goals", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  projectId: uuid("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  weekNumber: integer("week_number").notNull(),
-  title: text("title").notNull(),
-  description: text("description"),
-  completedBy: uuid("completed_by").references(() => householdMembers.id),
-  completedAt: timestamp("completed_at"),
-});
+export const officeGoals = pgTable(
+  "office_goals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    goalKey: text("goal_key").notNull(),
+    completedBy: uuid("completed_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    completedAt: timestamp("completed_at").notNull(),
+  },
+  (t) => [uniqueIndex("office_goals_uq").on(t.householdId, t.goalKey)],
+);
 
-export const goalSteps = pgTable("goal_steps", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  goalId: uuid("goal_id")
-    .references(() => projectGoals.id, { onDelete: "cascade" })
-    .notNull(),
-  description: text("description").notNull(),
-  isDone: boolean("is_done").default(false).notNull(),
-  order: integer("order").default(0).notNull(),
-});
+export const officeSteps = pgTable(
+  "office_steps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    goalKey: text("goal_key").notNull(),
+    stepIndex: integer("step_index").notNull(),
+    isDone: boolean("is_done").default(true).notNull(),
+  },
+  (t) => [
+    uniqueIndex("office_steps_uq").on(t.householdId, t.goalKey, t.stepIndex),
+  ],
+);
 
-// Inventory
 export const inventoryItems = pgTable("inventory_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
@@ -197,23 +203,12 @@ export const inventoryItems = pgTable("inventory_items", {
   })
     .default("fica")
     .notNull(),
-  photoUrl: text("photo_url"),
+  createdBy: uuid("created_by").references(() => householdMembers.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Achievements
-export const achievements = pgTable("achievements", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  memberId: uuid("member_id")
-    .references(() => householdMembers.id)
-    .notNull(),
-  achievementKey: text("achievement_key").notNull(),
-  unlockedAt: timestamp("unlocked_at").defaultNow().notNull(),
-});
-
-// Push Tokens
 export const pushTokens = pgTable("push_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
@@ -225,38 +220,38 @@ export const pushTokens = pgTable("push_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Reactions
-export const completionReactions = pgTable("completion_reactions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  householdId: uuid("household_id")
-    .references(() => households.id, { onDelete: "cascade" })
-    .notNull(),
-  completionId: uuid("completion_id")
-    .references(() => completions.id, { onDelete: "cascade" })
-    .notNull(),
-  memberId: uuid("member_id")
-    .references(() => householdMembers.id)
-    .notNull(),
-  emoji: text("emoji", {
-    enum: ["celebrar", "fogo", "coracao", "palmas"],
-  }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const completionReactions = pgTable(
+  "completion_reactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    completionId: uuid("completion_id")
+      .references(() => completions.id, { onDelete: "cascade" })
+      .notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    emoji: text("emoji", {
+      enum: ["celebrar", "fogo", "coracao", "palmas"],
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("reactions_uq").on(t.completionId, t.memberId, t.emoji)],
+);
 
-// Task Trades
 export const taskTrades = pgTable("task_trades", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
     .references(() => households.id, { onDelete: "cascade" })
     .notNull(),
-  taskId: uuid("task_id")
-    .references(() => householdTasks.id, { onDelete: "cascade" })
-    .notNull(),
+  taskKey: text("task_key").notNull(),
   requesterId: uuid("requester_id")
-    .references(() => householdMembers.id)
+    .references(() => householdMembers.id, { onDelete: "cascade" })
     .notNull(),
   assigneeId: uuid("assignee_id")
-    .references(() => householdMembers.id)
+    .references(() => householdMembers.id, { onDelete: "cascade" })
     .notNull(),
   status: text("status", { enum: ["pending", "accepted", "rejected"] })
     .default("pending")
@@ -265,7 +260,6 @@ export const taskTrades = pgTable("task_trades", {
   resolvedAt: timestamp("resolved_at"),
 });
 
-// Household Rewards / Store
 export const storeRewards = pgTable("store_rewards", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
@@ -274,11 +268,9 @@ export const storeRewards = pgTable("store_rewards", {
   title: text("title").notNull(),
   costCoins: integer("cost_coins").notNull(),
   icon: text("icon").default("🎁").notNull(),
-  isSystem: boolean("is_system").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Reward Purchases
 export const rewardPurchases = pgTable("reward_purchases", {
   id: uuid("id").defaultRandom().primaryKey(),
   householdId: uuid("household_id")
@@ -288,7 +280,7 @@ export const rewardPurchases = pgTable("reward_purchases", {
     .references(() => storeRewards.id, { onDelete: "cascade" })
     .notNull(),
   memberId: uuid("member_id")
-    .references(() => householdMembers.id)
+    .references(() => householdMembers.id, { onDelete: "cascade" })
     .notNull(),
   costCoins: integer("cost_coins").notNull(),
   status: text("status", { enum: ["pending", "approved", "rejected"] })

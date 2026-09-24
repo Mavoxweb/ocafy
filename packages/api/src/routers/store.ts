@@ -1,122 +1,121 @@
-import { db, householdMembers, rewardPurchases, storeRewards } from "@ocafy/db";
+import { computeCoins } from "@ocafy/core";
+import { completions, db, rewardPurchases, storeRewards } from "@ocafy/db";
+import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import {
-  buyRewardSchema,
-  resolvePurchaseSchema,
-  rewardSchema,
-} from "../schemas/index.js";
-import { publicProcedure, router } from "../trpc.js";
+import { rewardSchema, uuid } from "../schemas/index";
+import { memberProcedure, router } from "../trpc";
 
 export const storeRouter = router({
-  listRewards: publicProcedure
-    .input(z.object({ householdId: z.string().uuid() }))
-    .query(async ({ input }) => {
-      const rewards = await db.query.storeRewards.findMany({
-        where: eq(storeRewards.householdId, input.householdId),
-      });
-
-      return rewards;
-    }),
-
-  addReward: publicProcedure
-    .input(rewardSchema.extend({ householdId: z.string().uuid() }))
-    .mutation(async ({ input }) => {
-      const [reward] = await db
+  addReward: memberProcedure
+    .input(rewardSchema)
+    .mutation(async ({ ctx, input }) => {
+      const id = input.id ?? crypto.randomUUID();
+      await db
         .insert(storeRewards)
         .values({
-          householdId: input.householdId,
+          id,
+          householdId: ctx.householdId,
           title: input.title,
           costCoins: input.costCoins,
           icon: input.icon,
         })
-        .returning();
-
-      return reward;
+        .onConflictDoNothing({ target: storeRewards.id });
+      return { id };
     }),
 
-  buyReward: publicProcedure
-    .input(
-      buyRewardSchema.extend({
-        householdId: z.string().uuid(),
-        memberId: z.string().uuid(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const reward = await db.query.storeRewards.findFirst({
-        where: and(
-          eq(storeRewards.id, input.rewardId),
-          eq(storeRewards.householdId, input.householdId),
-        ),
-      });
+  /** Pedido de resgate: o saldo é conferido no servidor. */
+  buy: memberProcedure
+    .input(z.object({ id: uuid.optional(), rewardId: uuid }))
+    .mutation(async ({ ctx, input }) => {
+      const [reward] = await db
+        .select()
+        .from(storeRewards)
+        .where(
+          and(
+            eq(storeRewards.id, input.rewardId),
+            eq(storeRewards.householdId, ctx.householdId),
+          ),
+        );
+      if (!reward)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Prêmio não encontrado.",
+        });
 
-      if (!reward) throw new Error("Recompensa não encontrada");
-
-      const member = await db.query.householdMembers.findFirst({
-        where: eq(householdMembers.id, input.memberId),
-      });
-
-      if (!member || member.coins < reward.costCoins) {
-        throw new Error("Moedas da casa insuficientes");
+      const [comps, purchases] = await db.batch([
+        db
+          .select({
+            who: completions.completedBy,
+            pts: completions.pointsAwarded,
+            dateKey: completions.dateKey,
+          })
+          .from(completions)
+          .where(eq(completions.householdId, ctx.householdId)),
+        db
+          .select({
+            memberId: rewardPurchases.memberId,
+            costCoins: rewardPurchases.costCoins,
+            status: rewardPurchases.status,
+          })
+          .from(rewardPurchases)
+          .where(eq(rewardPurchases.householdId, ctx.householdId)),
+      ]);
+      const { balance } = computeCoins(comps, purchases, ctx.member.id);
+      if (balance < reward.costCoins) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Moedas da casa insuficientes.",
+        });
       }
 
-      // Deduct coins
+      const id = input.id ?? crypto.randomUUID();
       await db
-        .update(householdMembers)
-        .set({ coins: member.coins - reward.costCoins })
-        .where(eq(householdMembers.id, input.memberId));
-
-      const [purchase] = await db
         .insert(rewardPurchases)
         .values({
-          householdId: input.householdId,
-          rewardId: input.rewardId,
-          memberId: input.memberId,
+          id,
+          householdId: ctx.householdId,
+          rewardId: reward.id,
+          memberId: ctx.member.id,
           costCoins: reward.costCoins,
           status: "pending",
         })
-        .returning();
-
-      return purchase;
+        .onConflictDoNothing({ target: rewardPurchases.id });
+      return { id };
     }),
 
-  resolvePurchase: publicProcedure
-    .input(
-      resolvePurchaseSchema.extend({
-        householdId: z.string().uuid(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const purchase = await db.query.rewardPurchases.findFirst({
-        where: and(
-          eq(rewardPurchases.id, input.purchaseId),
-          eq(rewardPurchases.householdId, input.householdId),
-        ),
-      });
-
-      if (!purchase) throw new Error("Pedido de compra não encontrado");
-
-      const status = input.approved ? "approved" : "rejected";
-
-      // If rejected, refund coins
-      if (!input.approved) {
-        const member = await db.query.householdMembers.findFirst({
-          where: eq(householdMembers.id, purchase.memberId),
+  /** Só a outra pessoa da casa aprova ou recusa (recusar devolve as moedas). */
+  resolve: memberProcedure
+    .input(z.object({ id: uuid, approved: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const [p] = await db
+        .select()
+        .from(rewardPurchases)
+        .where(
+          and(
+            eq(rewardPurchases.id, input.id),
+            eq(rewardPurchases.householdId, ctx.householdId),
+          ),
+        );
+      if (!p)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Pedido não encontrado.",
         });
-        if (member) {
-          await db
-            .update(householdMembers)
-            .set({ coins: member.coins + purchase.costCoins })
-            .where(eq(householdMembers.id, purchase.memberId));
-        }
+      if (p.memberId === ctx.member.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Quem pediu não pode aprovar o próprio pedido.",
+        });
       }
-
-      const [updated] = await db
+      if (p.status !== "pending") return { ok: true };
+      await db
         .update(rewardPurchases)
-        .set({ status, resolvedAt: new Date() })
-        .where(eq(rewardPurchases.id, input.purchaseId))
-        .returning();
-
-      return updated;
+        .set({
+          status: input.approved ? "approved" : "rejected",
+          resolvedAt: new Date(),
+        })
+        .where(eq(rewardPurchases.id, p.id));
+      return { ok: true };
     }),
 });

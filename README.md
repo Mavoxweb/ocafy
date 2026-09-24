@@ -29,15 +29,28 @@ Abra o `index.html` no navegador ou sirva a pasta:
 npx serve .
 ```
 
-## App web (Next.js)
+## App web (Next.js + tRPC + Neon)
+
+Monorepo pnpm/Turborepo: `apps/web` (Next.js 16), `apps/mobile` (Expo), `packages/core` (regras e catálogo),
+`packages/db` (Drizzle + Neon), `packages/api` (tRPC v11) e `packages/ui` (tokens).
 
 ```bash
 pnpm install
-pnpm --filter @ocafy/web dev      # http://localhost:3000
-pnpm --filter @ocafy/web build
+cp .env.example apps/web/.env.local     # preencha com uma branch de desenvolvimento do Neon
+pnpm --filter @ocafy/db db:migrate      # cria as tabelas no banco apontado por DATABASE_URL_UNPOOLED
+pnpm --filter @ocafy/web dev            # http://localhost:3000
 ```
 
-O protótipo `index.html` continua como referência visual. Telas do app: onboarding, Hoje, Rotinas, Cozinha, Gatos, Lojinha, Placar (feed social e conquistas) e Projeto Escritório.
+- **Login:** Neon Auth (e-mail e senha) via `@neondatabase/auth`. As rotas do app ficam protegidas em `src/proxy.ts`.
+- **Casa de casal:** cada pessoa tem a própria conta; a segunda entra por código/link de convite (`/entrar?convite=CODIGO`).
+- **Dados:** o app mantém um cache do snapshot da casa (`household.snapshot`), atualiza a tela na hora (otimista),
+  grava pelo tRPC e sincroniza a cada 15 s / ao voltar para a aba.
+- **Segurança:** a casa e o membro vêm sempre da sessão no servidor (`memberProcedure`), nunca de parâmetros do cliente.
+- **Testes:** `pnpm test` roda o `core` e, se houver `DATABASE_URL` de uma branch que não seja `production`,
+  os testes de integração da API contra o Neon (sem a variável, eles são pulados).
+- **Migrations:** `pnpm --filter @ocafy/db db:generate` gera o SQL em `packages/db/drizzle/` a partir de `schema.ts`.
+
+O protótipo `index.html` continua como referência visual.
 
 ## Marca
 
@@ -52,7 +65,8 @@ Cores: Rosa Ocafy `#FFB7C5` · Rosa Profundo `#C24B68` · Menta `#D5F3D8` · Ver
 
 ## Próximos passos
 
-- [ ] Autenticação e banco próprio (Supabase ou Firebase)
+- [x] Autenticação e banco próprio (Neon Auth + Postgres)
 - [ ] PWA instalável com notificações push (alertas do congelador e da rotina)
 - [x] Migração para Next.js mantendo a lógica atual (`apps/web`, Fase 4)
-- [ ] Trocar o armazenamento local do `apps/web` (`src/lib/store.ts`) pelo tRPC/Neon (`@ocafy/api`)
+- [x] `apps/web` ligado ao tRPC/Neon (Fase 5)
+- [ ] Aplicar as migrations e o Auth na branch `production` do Neon e publicar (domínio confiável no Neon Auth)

@@ -1,89 +1,213 @@
-import { calculatePoints, calculateTaskStatus } from "@ocafy/core";
-import { completions, db, householdMembers, householdTasks } from "@ocafy/db";
-import { and, desc, eq } from "drizzle-orm";
+import {
+  OFFICE_GOALS,
+  RECURRING_TASKS,
+  TASK_MAP,
+  bagsPerLitterChange,
+  pointsRange,
+} from "@ocafy/core";
+import {
+  completions,
+  db,
+  litterSettings,
+  officeGoals,
+  taskOverrides,
+} from "@ocafy/db";
+import { TRPCError } from "@trpc/server";
+import { and, eq, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { z } from "zod";
-import { completeTaskSchema } from "../schemas/index.js";
-import { publicProcedure, router } from "../trpc.js";
+import { completeTaskSchema, uuid } from "../schemas/index";
+import { memberProcedure, router } from "../trpc";
+
+type Ops = [BatchItem<"pg">, ...BatchItem<"pg">[]];
+
+const bagsOf = (l: typeof litterSettings.$inferSelect) =>
+  bagsPerLitterChange({
+    cats: l.catsCount,
+    boxes: l.boxesCount,
+    kgPerBox: l.kgPerBox,
+    bagKg: l.bagKg,
+    minDays: l.minDays,
+    maxDays: l.maxDays,
+    currentStock: l.stockBags ?? 0,
+  });
+
+const MAX_BACKDATE_MS = 60 * 24 * 3600 * 1000;
 
 export const tasksRouter = router({
-  list: publicProcedure
-    .input(z.object({ householdId: z.string().uuid() }))
-    .query(async ({ input }) => {
-      const tasks = await db.query.householdTasks.findMany({
-        where: eq(householdTasks.householdId, input.householdId),
-      });
+  complete: memberProcedure
+    .input(completeTaskSchema)
+    .mutation(async ({ ctx, input }) => {
+      const task = TASK_MAP[input.taskKey];
+      if (!task)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Tarefa desconhecida.",
+        });
 
-      const allCompletions = await db.query.completions.findMany({
-        where: eq(completions.householdId, input.householdId),
-        orderBy: [desc(completions.completedAt)],
-      });
+      const at = new Date(input.at);
+      const now = Date.now();
+      if (
+        at.getTime() > now + 5 * 60_000 ||
+        at.getTime() < now - MAX_BACKDATE_MS
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Data fora do período permitido (até 60 dias atrás).",
+        });
+      }
 
-      const mapped = tasks.map((task: typeof householdTasks.$inferSelect) => {
-        const lastComp = allCompletions.find(
-          (c: typeof completions.$inferSelect) => c.taskId === task.id,
-        );
-        const status = calculateTaskStatus(
-          task.minDays,
-          task.maxDays,
-          lastComp ? lastComp.completedAt.toISOString() : null,
-        );
+      // O cliente calcula bônus, mas o XP fica dentro da faixa possível da tarefa.
+      const range = pointsRange(task.mins);
+      const pts = Math.min(range.max, Math.max(range.min, input.pts));
+      const id = input.id ?? crypto.randomUUID();
 
-        return {
-          ...task,
-          status,
-          lastCompletion: lastComp || null,
-        };
-      });
+      const ops: Ops = [
+        db
+          .insert(completions)
+          .values({
+            id,
+            householdId: ctx.householdId,
+            taskKey: input.taskKey,
+            completedBy: ctx.member.id,
+            completedAt: at,
+            pointsAwarded: pts,
+            note: input.note || null,
+            dateKey: input.dateKey,
+          })
+          .onConflictDoNothing({ target: completions.id }),
+      ];
 
-      return mapped;
+      if (input.taskKey === "area_troca") {
+        const [l] = await db
+          .select()
+          .from(litterSettings)
+          .where(eq(litterSettings.householdId, ctx.householdId));
+        if (l) {
+          ops.push(
+            db
+              .update(litterSettings)
+              .set({
+                stockBags: sql`greatest(0, ${litterSettings.stockBags} - ${bagsOf(l)})`,
+              })
+              .where(
+                and(
+                  eq(litterSettings.householdId, ctx.householdId),
+                  sql`${litterSettings.stockBags} is not null`,
+                ),
+              ),
+          );
+        }
+      }
+      await db.batch(ops);
+      return { id, pts };
     }),
 
-  complete: publicProcedure
+  /** Desfazer/apagar um registro (qualquer pessoa da casa). Reverte efeitos colaterais. */
+  remove: memberProcedure
+    .input(z.object({ id: uuid }))
+    .mutation(async ({ ctx, input }) => {
+      const [c] = await db
+        .select()
+        .from(completions)
+        .where(
+          and(
+            eq(completions.id, input.id),
+            eq(completions.householdId, ctx.householdId),
+          ),
+        );
+      if (!c) return { ok: true }; // idempotente
+
+      const ops: Ops = [
+        db
+          .delete(completions)
+          .where(
+            and(
+              eq(completions.id, c.id),
+              eq(completions.householdId, ctx.householdId),
+            ),
+          ),
+      ];
+
+      if (c.taskKey === "area_troca") {
+        const [l] = await db
+          .select()
+          .from(litterSettings)
+          .where(eq(litterSettings.householdId, ctx.householdId));
+        if (l?.stockBags != null) {
+          ops.push(
+            db
+              .update(litterSettings)
+              .set({ stockBags: l.stockBags + bagsOf(l) })
+              .where(eq(litterSettings.householdId, ctx.householdId)),
+          );
+        }
+      }
+
+      if (c.taskKey === "escritorio") {
+        const goal = OFFICE_GOALS.find((g) => g.t === c.note);
+        if (goal) {
+          ops.push(
+            db
+              .delete(officeGoals)
+              .where(
+                and(
+                  eq(officeGoals.householdId, ctx.householdId),
+                  eq(officeGoals.goalKey, goal.id),
+                ),
+              ),
+          );
+        }
+      }
+
+      await db.batch(ops);
+      return { ok: true };
+    }),
+
+  /** Janela de dias (mín/máx) ou pausa de uma tarefa recorrente. */
+  setOverride: memberProcedure
     .input(
-      completeTaskSchema.extend({
-        householdId: z.string().uuid(),
-        memberId: z.string().uuid(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const task = await db.query.householdTasks.findFirst({
-        where: and(
-          eq(householdTasks.id, input.taskId),
-          eq(householdTasks.householdId, input.householdId),
-        ),
-      });
-
-      if (!task) {
-        throw new Error("Tarefa não encontrada");
-      }
-
-      const points = calculatePoints(task.mins, false);
-      const completedAt = new Date();
-
-      const [completion] = await db
-        .insert(completions)
-        .values({
-          householdId: input.householdId,
-          taskId: input.taskId,
-          completedBy: input.memberId,
-          completedAt,
-          pointsAwarded: points,
-          note: input.note,
-          dateKey: input.date,
+      z
+        .object({
+          taskKey: z.string().min(1).max(60),
+          min: z.number().int().min(1).max(365).optional(),
+          max: z.number().int().min(1).max(365).optional(),
+          paused: z.boolean().optional(),
         })
-        .returning();
-
-      const member = await db.query.householdMembers.findFirst({
-        where: eq(householdMembers.id, input.memberId),
-      });
-
-      if (member) {
-        await db
-          .update(householdMembers)
-          .set({ totalXp: member.totalXp + points })
-          .where(eq(householdMembers.id, input.memberId));
+        .refine(
+          (v) => (v.min == null) === (v.max == null),
+          "Envie mínimo e máximo juntos.",
+        )
+        .refine(
+          (v) => v.min == null || v.max == null || v.min <= v.max,
+          "Mínimo maior que o máximo.",
+        ),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!RECURRING_TASKS.some((t) => t.id === input.taskKey)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Tarefa não configurável.",
+        });
       }
-
-      return { completion, pointsAwarded: points };
+      const set = {
+        ...(input.min != null
+          ? { minDays: input.min, maxDays: input.max }
+          : {}),
+        ...(input.paused != null ? { isPaused: input.paused } : {}),
+      };
+      if (!Object.keys(set).length) return { ok: true };
+      await db
+        .insert(taskOverrides)
+        .values({
+          householdId: ctx.householdId,
+          taskKey: input.taskKey,
+          ...set,
+        })
+        .onConflictDoUpdate({
+          target: [taskOverrides.householdId, taskOverrides.taskKey],
+          set,
+        });
+      return { ok: true };
     }),
 });

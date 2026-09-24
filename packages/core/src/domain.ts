@@ -1,11 +1,11 @@
-import { PROTEIN_MAP } from "./catalog.js";
+import { PROTEIN_MAP } from "./catalog";
 import type {
   LitterSettings,
   Meal,
   ProteinInfo,
   TaskStatus,
   TaskStatusState,
-} from "./types.js";
+} from "./types";
 
 export function daysBetween(dateA: Date, dateB: Date): number {
   const startA = new Date(
@@ -204,4 +204,84 @@ export function calculateWeeklyGoalProgress(
     coinsReward: 100,
     achievementKey: "dupla_implacavel",
   };
+}
+
+/* ---------- datas (YYYY-MM-DD) ---------- */
+
+export function dateKeyOf(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Segunda-feira (YYYY-MM-DD) da semana de uma data no formato YYYY-MM-DD. */
+export function mondayOfDateKey(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return dateKeyOf(date);
+}
+
+/* ---------- pontos ---------- */
+
+/**
+ * Faixa de XP aceita para uma tarefa: base (5 + minutos) até base + o maior
+ * bônus possível (janela: metade dos minutos, mín. 2; rotina: +3).
+ * Usada pela API para não confiar cegamente no valor enviado pelo cliente.
+ */
+export function pointsRange(mins: number): { min: number; max: number } {
+  const base = calculatePoints(mins, false);
+  const bonus = Math.max(3, Math.max(2, Math.round(mins * 0.5)));
+  return { min: base, max: base + bonus };
+}
+
+/* ---------- moedas da casa ---------- */
+
+/** 1 moeda a cada 10 XP; a meta semanal da dupla rende bônus para cada um. */
+export const XP_PER_COIN = 10;
+
+export interface CoinCompletion {
+  who: string;
+  pts: number;
+  dateKey: string;
+}
+
+export interface CoinPurchase {
+  memberId: string;
+  costCoins: number;
+  status: "pending" | "approved" | "rejected";
+}
+
+export interface CoinBalance {
+  earned: number;
+  spent: number;
+  balance: number;
+}
+
+/**
+ * Moedas são derivadas (nunca gravadas): desfazer uma tarefa ou recusar uma
+ * compra nunca deixa o saldo dessincronizado.
+ * saldo = ⌊XP/10⌋ + 100 × semanas com meta batida − compras não recusadas
+ */
+export function computeCoins(
+  completions: CoinCompletion[],
+  purchases: CoinPurchase[],
+  memberId: string,
+): CoinBalance {
+  const byWeek = new Map<string, number>();
+  let xp = 0;
+  for (const c of completions) {
+    if (c.who === memberId) xp += c.pts;
+    const wk = mondayOfDateKey(c.dateKey);
+    byWeek.set(wk, (byWeek.get(wk) ?? 0) + c.pts);
+  }
+  let weeks = 0;
+  for (const weekXp of byWeek.values()) {
+    if (calculateWeeklyGoalProgress(weekXp).isReached) weeks++;
+  }
+  const reward = calculateWeeklyGoalProgress(0).coinsReward;
+  const earned = Math.floor(xp / XP_PER_COIN) + weeks * reward;
+  const spent = purchases
+    .filter((p) => p.memberId === memberId && p.status !== "rejected")
+    .reduce((a, p) => a + p.costCoins, 0);
+  return { earned, spent, balance: Math.max(0, earned - spent) };
 }

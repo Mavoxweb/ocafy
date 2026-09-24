@@ -8,10 +8,13 @@ import {
   calculateRemainingLitter,
   calculateTaskStatus,
   calculateWeeklyGoalProgress,
+  computeCoins,
   daysBetween,
+  mondayOfDateKey,
+  pointsRange,
   xpNeededForLevel,
-} from "../src/domain.js";
-import type { LitterSettings, Meal } from "../src/types.js";
+} from "../src/domain";
+import type { LitterSettings, Meal } from "../src/types";
 
 describe("Core Domain Logic", () => {
   describe("daysBetween", () => {
@@ -171,5 +174,58 @@ describe("Core Domain Logic", () => {
       expect(progress.coinsReward).toBe(100);
       expect(progress.achievementKey).toBe("dupla_implacavel");
     });
+  });
+});
+
+describe("moedas da casa", () => {
+  const c = (who: string, pts: number, dateKey: string) => ({
+    who,
+    pts,
+    dateKey,
+  });
+
+  it("dá 1 moeda a cada 10 XP", () => {
+    const r = computeCoins([c("a", 95, "2026-09-21")], [], "a");
+    expect(r).toEqual({ earned: 9, spent: 0, balance: 9 });
+  });
+
+  it("bate a meta semanal da dupla: +100 para cada um", () => {
+    const week = [c("a", 600, "2026-09-21"), c("b", 400, "2026-09-23")];
+    expect(computeCoins(week, [], "a").earned).toBe(60 + 100);
+    expect(computeCoins(week, [], "b").earned).toBe(40 + 100);
+  });
+
+  it("conta compras pendentes e aprovadas, mas não as recusadas", () => {
+    const comps = [c("a", 1000, "2026-09-21")];
+    const p = (status: "pending" | "approved" | "rejected") => ({
+      memberId: "a",
+      costCoins: 30,
+      status,
+    });
+    expect(
+      computeCoins(comps, [p("pending"), p("approved"), p("rejected")], "a")
+        .spent,
+    ).toBe(60);
+  });
+
+  it("nunca fica negativo", () => {
+    const r = computeCoins(
+      [],
+      [{ memberId: "a", costCoins: 50, status: "approved" }],
+      "a",
+    );
+    expect(r.balance).toBe(0);
+  });
+});
+
+describe("pointsRange / mondayOfDateKey", () => {
+  it("aceita base até base + maior bônus", () => {
+    expect(pointsRange(20)).toEqual({ min: 25, max: 25 + 10 });
+    expect(pointsRange(1)).toEqual({ min: 6, max: 6 + 3 });
+  });
+  it("acha a segunda-feira da semana", () => {
+    expect(mondayOfDateKey("2026-09-24")).toBe("2026-09-21"); // quinta
+    expect(mondayOfDateKey("2026-09-27")).toBe("2026-09-21"); // domingo
+    expect(mondayOfDateKey("2026-09-21")).toBe("2026-09-21");
   });
 });
