@@ -53,5 +53,5 @@ export function daysAgoPhrase(d: number): string {
   return `há ${d} dias`;
 }
 
-export const uid = () =>
-  Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+/** uuid v4 — o servidor aceita ids gerados pelo cliente (UI otimista). */
+export const uid = () => crypto.randomUUID();

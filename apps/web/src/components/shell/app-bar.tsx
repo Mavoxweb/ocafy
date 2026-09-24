@@ -2,7 +2,6 @@
 
 import { IconMoon, IconSliders, IconSun } from "@/components/ui/icons";
 import { OcafyLockup } from "@/components/ui/logo";
-import { switchMe } from "@/lib/actions";
 import { WEEKDAYS, capitalize } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import { currentMember } from "@/lib/selectors";
@@ -40,13 +39,10 @@ export function AppBar() {
         <button
           type="button"
           className="avatar"
-          onClick={switchMe}
-          aria-label={`Registrando como ${me?.name}. Toque para trocar de pessoa`}
+          onClick={() => openSheet({ kind: "settings" })}
+          aria-label={`${me?.name}: abrir ajustes`}
         >
           {(me?.name[0] ?? "?").toUpperCase()}
-          <span className="sw" aria-hidden="true">
-            ⇄
-          </span>
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.82rem] font-semibold text-muted">
@@ -82,8 +78,7 @@ export function AppBar() {
       </header>
       <div className="sync">
         <span>
-          <b className="font-bold">{s.household?.name}</b> · salvo neste
-          aparelho
+          <b className="font-bold">{s.household?.name}</b> · sincronizado
         </span>
       </div>
     </div>

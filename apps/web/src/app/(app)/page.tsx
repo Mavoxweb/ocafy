@@ -2,6 +2,7 @@
 
 import {
   FreezerAlerts,
+  InviteCard,
   OfficeShortcut,
   PeopleCards,
   RoomsCarousel,
@@ -36,6 +37,7 @@ export default function TodayPage() {
     <>
       <TodayHero />
       <PeopleCards />
+      <InviteCard />
       <OfficeShortcut />
       <RoomsCarousel />
       <FreezerAlerts />

@@ -1,25 +1,23 @@
 "use client";
 
-import { store } from "@/lib/store";
+import { startSync } from "@/lib/sync";
 import { applyTheme, readTheme } from "@/lib/ui";
 import { useEffect } from "react";
 
-/** Carrega o estado salvo e o tema no navegador (uma vez, no layout raiz). */
+/** Liga o tema e a sincronização com o servidor (uma vez, no layout raiz). */
 export function StoreBoot() {
   useEffect(() => {
-    store.hydrate();
     applyTheme(readTheme());
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "ocafy-web-v1") store.hydrate();
-    };
+    // Nas telas de login não há sessão: evita um 401 inútil na abertura.
+    const onAuthPage = ["/entrar", "/cadastro"].includes(location.pathname);
+    const stopSync = startSync({ initial: !onAuthPage });
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const onScheme = () => {
       if (readTheme() === "auto") applyTheme("auto");
     };
-    window.addEventListener("storage", onStorage);
     mq.addEventListener("change", onScheme);
     return () => {
-      window.removeEventListener("storage", onStorage);
+      stopSync();
       mq.removeEventListener("change", onScheme);
     };
   }, []);

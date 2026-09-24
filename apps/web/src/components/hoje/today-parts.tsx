@@ -1,5 +1,6 @@
 "use client";
 
+import { InvitePanel } from "@/components/shell/invite-panel";
 import { IconFlame, RoomIcon } from "@/components/ui/icons";
 import { Group } from "@/components/ui/primitives";
 import { completeTask, pullMeal, respondTrade } from "@/lib/actions";
@@ -97,6 +98,13 @@ export function PeopleCards() {
       })}
     </div>
   );
+}
+
+/* ---------- convite (enquanto a casa tem só uma pessoa) ---------- */
+export function InviteCard() {
+  const s = useAppState();
+  if (s.members.length >= 2) return null;
+  return <InvitePanel />;
 }
 
 /* ---------- Projeto Escritório (atalho) ---------- */

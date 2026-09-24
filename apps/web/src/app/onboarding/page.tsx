@@ -3,19 +3,21 @@
 import { Splash } from "@/components/shell/splash";
 import { OcafySymbol } from "@/components/ui/logo";
 import { Chip, Chips, Field } from "@/components/ui/primitives";
-import { createHousehold } from "@/lib/actions";
+import { createHousehold, joinHousehold } from "@/lib/actions";
+import { authClient } from "@/lib/auth/client";
 import { ROOM_ORDER } from "@/lib/catalog";
 import { DEFAULT_LITTER, useAppState } from "@/lib/store";
+import { errorMessage } from "@/lib/trpc";
 import {
   RECURRING_TASKS,
   ROOM_NAMES,
   ROUTINE_TASKS,
   type RoomId,
 } from "@ocafy/core";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
-type StepId = "casa" | "comodos" | "gatos" | "resumo";
+type StepId = "modo" | "casa" | "convite" | "comodos" | "gatos" | "resumo";
 
 const NUM_FIELDS = [
   { key: "cats", label: "Gatos", min: 1, max: 10, step: 1 },
@@ -33,12 +35,27 @@ const NUM_FIELDS = [
 ] as const;
 
 export default function OnboardingPage() {
+  return (
+    <Suspense fallback={null}>
+      <Onboarding />
+    </Suspense>
+  );
+}
+
+function Onboarding() {
   const s = useAppState();
   const router = useRouter();
-  const [step, setStep] = useState<StepId>("casa");
+  const params = useSearchParams();
+  const inviteFromLink =
+    params
+      .get("convite")
+      ?.toUpperCase()
+      .replace(/[^A-Z0-9]/g, "") ?? "";
+
+  const [step, setStep] = useState<StepId>(inviteFromLink ? "convite" : "modo");
   const [houseName, setHouseName] = useState("");
-  const [nameA, setNameA] = useState("");
-  const [nameB, setNameB] = useState("");
+  const [myName, setMyName] = useState("");
+  const [code, setCode] = useState(inviteFromLink);
   const [rooms, setRooms] = useState<RoomId[]>(
     ROOM_ORDER.filter((r) => r !== "casa"),
   );
@@ -48,61 +65,108 @@ export default function OnboardingPage() {
     ),
   );
   const [stock, setStock] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
+  // Já tem casa → início; sem sessão → login (preservando o convite).
   useEffect(() => {
-    if (s.hydrated && s.household) router.replace("/");
-  }, [s.hydrated, s.household, router]);
+    if (s.status === "ready") router.replace("/");
+    if (s.status === "anon")
+      router.replace(
+        inviteFromLink ? `/entrar?convite=${inviteFromLink}` : "/entrar",
+      );
+  }, [s.status, router, inviteFromLink]);
 
+  // Nome sugerido a partir do cadastro.
+  useEffect(() => {
+    void authClient.getSession().then((r) => {
+      const n = r.data?.user?.name?.trim().split(/\s+/)[0];
+      if (n) setMyName((cur) => cur || n.slice(0, 24));
+    });
+  }, []);
+
+  const creating = step !== "modo" && step !== "convite";
   const hasCats = rooms.includes("gatos");
   const steps: StepId[] = hasCats
     ? ["casa", "comodos", "gatos", "resumo"]
     : ["casa", "comodos", "resumo"];
   const idx = steps.indexOf(step);
-  const valid =
-    step === "casa"
-      ? houseName.trim().length >= 2 &&
-        nameA.trim().length >= 2 &&
-        nameB.trim().length >= 2
-      : step === "comodos"
-        ? rooms.length > 0
-        : true;
 
   const enabled = new Set<RoomId>([...rooms, "casa"]);
   const nRoutine = ROUTINE_TASKS.filter((t) => enabled.has(t.room)).length;
   const nRecurring = RECURRING_TASKS.filter((t) => enabled.has(t.room)).length;
 
-  const finish = () => {
-    const num = (k: string, d: number) => {
-      const v = Number(litter[k]);
-      return v > 0 ? v : d;
-    };
-    const minDays = num("minDays", 5);
-    createHousehold({
-      houseName,
-      nameA,
-      nameB,
-      rooms,
-      litter: {
-        cats: Math.round(num("cats", 3)),
-        boxes: Math.round(num("boxes", 2)),
-        kgPerBox: num("kgPerBox", 4),
-        bagKg: num("bagKg", 4),
-        minDays,
-        maxDays: Math.max(minDays, num("maxDays", 7)),
-      },
-      litterStock:
-        hasCats && stock !== "" ? Math.max(0, Math.round(Number(stock))) : null,
-    });
-    router.replace("/");
+  const valid =
+    step === "casa"
+      ? houseName.trim().length >= 2 && myName.trim().length >= 2
+      : step === "convite"
+        ? code.trim().length >= 4 && myName.trim().length >= 2
+        : step === "comodos"
+          ? rooms.length > 0
+          : true;
+
+  const num = (k: string, d: number) => {
+    const v = Number(litter[k]);
+    return v > 0 ? v : d;
   };
 
+  async function finish() {
+    setBusy(true);
+    setError("");
+    try {
+      const minDays = Math.round(num("minDays", 5));
+      await createHousehold({
+        houseName: houseName.trim(),
+        memberName: myName.trim(),
+        rooms,
+        litter: {
+          cats: Math.round(num("cats", 3)),
+          boxes: Math.round(num("boxes", 2)),
+          kgPerBox: num("kgPerBox", 4),
+          bagKg: num("bagKg", 4),
+          minDays,
+          maxDays: Math.max(minDays, Math.round(num("maxDays", 7))),
+        },
+        litterStock:
+          hasCats && stock !== ""
+            ? Math.max(0, Math.round(Number(stock)))
+            : null,
+      });
+      router.replace("/");
+    } catch (e) {
+      setError(
+        errorMessage(e, "Não foi possível criar a casa. Tente de novo."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function join() {
+    setBusy(true);
+    setError("");
+    try {
+      await joinHousehold(code.trim(), myName.trim());
+      router.replace("/");
+    } catch (e) {
+      setError(
+        errorMessage(e, "Não foi possível entrar na casa. Confira o código."),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const next = () => {
-    if (!valid) return;
-    if (step === "resumo") finish();
+    if (!valid || busy) return;
+    if (step === "convite") void join();
+    else if (step === "resumo") void finish();
     else setStep(steps[idx + 1]);
   };
 
-  if (!s.hydrated || s.household) return <Splash ready={false} />;
+  if (s.status === "loading" || s.status === "ready" || s.status === "anon") {
+    return <Splash ready={false} />;
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[520px] flex-col justify-center px-4 py-8">
@@ -111,24 +175,28 @@ export default function OnboardingPage() {
         <div className="owm mt-2.5" style={{ fontSize: 38 }}>
           ocafy
         </div>
-        <p className="meta mt-2 mb-0">Deixa a casa ok.</p>
+        <p className="meta mb-0 mt-2">Deixa a casa ok.</p>
       </div>
 
-      <p className="sr-only">
-        Etapa {idx + 1} de {steps.length}
-      </p>
-      <div className="mb-3 flex justify-center gap-1.5" aria-hidden="true">
-        {steps.map((st, i) => (
-          <span
-            key={st}
-            className="h-1.5 rounded-pill transition-all"
-            style={{
-              width: i === idx ? 28 : 10,
-              background: i <= idx ? "var(--accent-strong)" : "var(--line)",
-            }}
-          />
-        ))}
-      </div>
+      {creating && (
+        <>
+          <p className="sr-only">
+            Etapa {idx + 1} de {steps.length}
+          </p>
+          <div className="mb-3 flex justify-center gap-1.5" aria-hidden="true">
+            {steps.map((st, i) => (
+              <span
+                key={st}
+                className="h-1.5 rounded-pill transition-all"
+                style={{
+                  width: i === idx ? 28 : 10,
+                  background: i <= idx ? "var(--accent-strong)" : "var(--line)",
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <form
         className="panel glass"
@@ -138,10 +206,67 @@ export default function OnboardingPage() {
           next();
         }}
       >
+        {step === "modo" && (
+          <>
+            <h1 className="text-[1.5rem]">Bem-vindo(a)!</h1>
+            <p className="meta">
+              Comece uma casa nova ou entre na casa de quem te convidou.
+            </p>
+            <div className="mt-4 grid gap-3">
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                style={{ margin: 0 }}
+                onClick={() => setStep("casa")}
+              >
+                Criar uma casa
+              </button>
+              <button
+                type="button"
+                className="btn btn-block"
+                style={{ margin: 0 }}
+                onClick={() => setStep("convite")}
+              >
+                Tenho um código de convite
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "convite" && (
+          <>
+            <h1 className="text-[1.5rem]">Entrar na casa</h1>
+            <p className="meta">
+              Digite o código que a outra pessoa te enviou.
+            </p>
+            <div className="mt-3 grid gap-3">
+              <Field label="Código do convite">
+                <input
+                  type="text"
+                  maxLength={16}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  placeholder="Ex.: K7M4XQ2R"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                />
+              </Field>
+              <Field label="Seu nome na casa">
+                <input
+                  type="text"
+                  maxLength={24}
+                  value={myName}
+                  onChange={(e) => setMyName(e.target.value)}
+                />
+              </Field>
+            </div>
+          </>
+        )}
+
         {step === "casa" && (
           <>
             <h1 className="text-[1.5rem]">Vamos montar a casa</h1>
-            <p className="meta">Três nomes e a rotina já nasce pronta.</p>
+            <p className="meta">Dois nomes e a rotina já nasce pronta.</p>
             <div className="mt-3 grid gap-3">
               <Field label="Nome da casa">
                 <input
@@ -152,28 +277,18 @@ export default function OnboardingPage() {
                   onChange={(e) => setHouseName(e.target.value)}
                 />
               </Field>
-              <div className="grid2">
-                <Field label="Seu nome">
-                  <input
-                    type="text"
-                    maxLength={24}
-                    value={nameA}
-                    onChange={(e) => setNameA(e.target.value)}
-                  />
-                </Field>
-                <Field label="Nome da outra pessoa">
-                  <input
-                    type="text"
-                    maxLength={24}
-                    value={nameB}
-                    onChange={(e) => setNameB(e.target.value)}
-                  />
-                </Field>
-              </div>
+              <Field label="Seu nome">
+                <input
+                  type="text"
+                  maxLength={24}
+                  value={myName}
+                  onChange={(e) => setMyName(e.target.value)}
+                />
+              </Field>
             </div>
             <p className="meta mt-3">
-              Vocês dividem o mesmo aparelho ou alternam pelo botão do avatar;
-              cada “Feito” vai para o nome de quem está usando.
+              A outra pessoa entra depois, com a própria conta, por um código de
+              convite — cada uma usa o seu aparelho.
             </p>
           </>
         )}
@@ -251,7 +366,7 @@ export default function OnboardingPage() {
         {step === "resumo" && (
           <>
             <h1 className="text-[1.5rem]">
-              Tudo pronto, {nameA.trim() || "vocês"}!
+              Tudo pronto, {myName.trim() || "você"}!
             </h1>
             <p className="meta">
               Isto é o que vai ser criado para {houseName.trim()}:
@@ -277,27 +392,48 @@ export default function OnboardingPage() {
             <p className="meta mt-3">
               Ao começar, tudo está “sem registro”: informe quando cada coisa
               foi feita pela última vez em Rotinas para o método calcular os
-              prazos.
+              prazos. Depois, convide a outra pessoa pela tela inicial.
             </p>
           </>
         )}
 
-        <div className="mt-5 flex items-center justify-between gap-3">
-          {idx > 0 ? (
+        {error && (
+          <p role="alert" className="mt-3 text-[0.9rem] font-bold text-late-t">
+            {error}
+          </p>
+        )}
+
+        {step !== "modo" && (
+          <div className="mt-5 flex items-center justify-between gap-3">
             <button
               type="button"
               className="btn"
-              onClick={() => setStep(steps[idx - 1])}
+              onClick={() => {
+                setError("");
+                setStep(
+                  step === "convite" || step === "casa"
+                    ? "modo"
+                    : steps[idx - 1],
+                );
+              }}
             >
               Voltar
             </button>
-          ) : (
-            <span />
-          )}
-          <button type="submit" className="btn btn-primary" disabled={!valid}>
-            {step === "resumo" ? "Começar" : "Continuar"}
-          </button>
-        </div>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!valid || busy}
+            >
+              {busy
+                ? "Aguarde…"
+                : step === "resumo"
+                  ? "Começar"
+                  : step === "convite"
+                    ? "Entrar na casa"
+                    : "Continuar"}
+            </button>
+          </div>
+        )}
       </form>
     </main>
   );

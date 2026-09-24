@@ -1889,3 +1889,19 @@
     }
   }
 }
+
+/* campo de senha usa o mesmo visual dos demais inputs */
+input[type="password"],
+input[type="email"] {
+  background: var(--soft);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 9px 11px;
+  min-height: 42px;
+  outline: none;
+}
+input[type="password"]:focus,
+input[type="email"]:focus {
+  border-color: var(--accent-strong);
+  background: var(--card);
+}

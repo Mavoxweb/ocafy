@@ -16,10 +16,11 @@ import {
   calculatePoints,
   calculateTaskStatus,
   calculateWeeklyGoalProgress,
+  computeCoins,
   daysBetween,
   getMealTime,
 } from "@ocafy/core";
-import { type AnyTask, OFFICE_GOALS, TASK_MAP, XP_PER_COIN } from "./catalog";
+import { type AnyTask, OFFICE_GOALS, TASK_MAP } from "./catalog";
 import { addDays, dayKey, fmtTime, fromKey, mondayKey, relDay } from "./dates";
 import type { AppState, MealRecord, Member } from "./store";
 
@@ -77,7 +78,7 @@ export const memberBySlot = (s: AppState, slot: "a" | "b") =>
 
 export function taskTitle(s: AppState, t: AnyTask): string {
   const a = memberBySlot(s, "a")?.name ?? "Pessoa 1";
-  const b = memberBySlot(s, "b")?.name ?? "Pessoa 2";
+  const b = memberBySlot(s, "b")?.name ?? "parceiro(a)";
   return t.t.replace("{A}", a).replace("{B}", b);
 }
 
@@ -426,32 +427,13 @@ export function achievements(s: AppState, now: Date): Achievement[] {
 
 /* ================= moedas & loja ================= */
 
-/** Semanas (segunda) em que a dupla bateu a meta de XP. */
-function goalWeeks(s: AppState): number {
-  const byWeek = new Map<string, number>();
-  for (const e of s.completions) {
-    const wk = mondayKey(fromKey(e.dateKey));
-    byWeek.set(wk, (byWeek.get(wk) ?? 0) + e.pts);
-  }
-  let n = 0;
-  for (const xp of byWeek.values())
-    if (calculateWeeklyGoalProgress(xp).isReached) n++;
-  return n;
-}
-
-export function coinsEarned(s: AppState, memberId: string): number {
-  const bonus = goalWeeks(s) * calculateWeeklyGoalProgress(0).coinsReward;
-  return Math.floor(xpOf(s, memberId) / XP_PER_COIN) + bonus;
-}
-
-export function coinsSpent(s: AppState, memberId: string): number {
-  return s.purchases
-    .filter((p) => p.memberId === memberId && p.status !== "rejected")
-    .reduce((a, p) => a + p.costCoins, 0);
-}
-
-export const coinsOf = (s: AppState, memberId: string) =>
-  Math.max(0, coinsEarned(s, memberId) - coinsSpent(s, memberId));
+/** Mesma regra usada pelo servidor para validar resgates (@ocafy/core). */
+export const coinsOf = (s: AppState, memberId: string): number =>
+  computeCoins(
+    s.completions.map((c) => ({ who: c.who, pts: c.pts, dateKey: c.dateKey })),
+    s.purchases,
+    memberId,
+  ).balance;
 
 /* ================= gatos ================= */
 

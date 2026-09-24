@@ -5,8 +5,9 @@ import { useSyncExternalStore } from "react";
 import type { InventoryDest, ReactionKey } from "./catalog";
 
 /**
- * Estado do app. Hoje persiste no localStorage (modo local, como o protótipo);
- * a forma dos dados espelha o schema do @ocafy/db para a troca por tRPC.
+ * Cache local do estado da casa. A fonte da verdade é o servidor (tRPC/Neon):
+ * `sync.ts` baixa o snapshot, aplica aqui, e as ações mudam este cache de forma
+ * otimista antes de confirmar no servidor.
  */
 
 export type Slot = "a" | "b";
@@ -84,11 +85,15 @@ export interface TaskOverride {
   off?: boolean;
 }
 
+export type LoadStatus = "loading" | "anon" | "nohousehold" | "ready" | "error";
+
 export interface AppState {
-  hydrated: boolean;
+  status: LoadStatus;
   household: { id: string; name: string; createdAt: string } | null;
   members: Member[];
   meId: string | null;
+  isOwner: boolean;
+  invite: { code: string; expiresAt: string } | null;
   rooms: RoomId[];
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
@@ -123,10 +128,12 @@ export const ALL_ROOMS: RoomId[] = [
 ];
 
 export const EMPTY_STATE: AppState = {
-  hydrated: false,
+  status: "loading",
   household: null,
   members: [],
   meId: null,
+  isOwner: false,
+  invite: null,
   rooms: ALL_ROOMS,
   litter: DEFAULT_LITTER,
   litterStock: null,
@@ -140,31 +147,8 @@ export const EMPTY_STATE: AppState = {
   trades: [],
 };
 
-const KEY = "ocafy-web-v1";
 const listeners = new Set<() => void>();
 let state: AppState = EMPTY_STATE;
-
-function persist() {
-  try {
-    const { hydrated: _h, ...rest } = state;
-    localStorage.setItem(KEY, JSON.stringify(rest));
-  } catch {
-    /* armazenamento indisponível: o app segue funcionando em memória */
-  }
-}
-
-function emit() {
-  for (const l of listeners) l();
-}
-
-function readStored(): Partial<AppState> {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Partial<AppState>) : {};
-  } catch {
-    return {};
-  }
-}
 
 export const store = {
   getState: () => state,
@@ -176,22 +160,9 @@ export const store = {
     };
   },
 
-  /** Carrega o localStorage (client-side). Chamar uma vez ao montar o app. */
-  hydrate() {
-    state = { ...EMPTY_STATE, ...readStored(), hydrated: true };
-    emit();
-  },
-
   set(updater: (s: AppState) => AppState) {
     state = updater(state);
-    persist();
-    emit();
-  },
-
-  reset() {
-    state = { ...EMPTY_STATE, hydrated: true };
-    persist();
-    emit();
+    for (const l of listeners) l();
   },
 };
 

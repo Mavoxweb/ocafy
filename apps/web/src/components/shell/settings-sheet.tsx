@@ -3,10 +3,12 @@
 import { OcafyLockup } from "@/components/ui/logo";
 import { Chip, Chips, Segmented } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
-import { renameMember, resetAll, setMe, toggleRoom } from "@/lib/actions";
+import { deleteHousehold, renameMe, toggleRoom } from "@/lib/actions";
+import { authClient } from "@/lib/auth/client";
 import { ROOM_ORDER } from "@/lib/catalog";
-import { currentMember } from "@/lib/selectors";
+import { currentMember, partnerOf } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
+import { errorMessage } from "@/lib/trpc";
 import {
   type Theme,
   closeSheet,
@@ -16,12 +18,38 @@ import {
 } from "@/lib/ui";
 import { ROOM_NAMES } from "@ocafy/core";
 import { useState } from "react";
+import { InvitePanel } from "./invite-panel";
 
 export function SettingsSheet() {
   const s = useAppState();
   const theme = useTheme();
   const me = currentMember(s);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const partner = partnerOf(s, me?.id);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function signOut() {
+    setBusy(true);
+    try {
+      await authClient.signOut();
+    } finally {
+      // recarrega para limpar todo o estado em memória da sessão anterior
+      window.location.assign("/entrar");
+    }
+  }
+
+  async function removeHouse() {
+    setBusy(true);
+    setError("");
+    try {
+      await deleteHousehold();
+      closeSheet();
+    } catch (e) {
+      setError(errorMessage(e, "Não foi possível apagar a casa."));
+      setBusy(false);
+    }
+  }
 
   return (
     <Sheet onClose={closeSheet} label="Ajustes">
@@ -36,22 +64,27 @@ export function SettingsSheet() {
       </SheetHead>
 
       <div className="grid2">
-        {s.members.map((m) => (
-          <label key={m.id} className="f">
-            {m.slot === "a" ? "Pessoa 1" : "Pessoa 2"}
-            <input
-              type="text"
-              maxLength={24}
-              defaultValue={m.name}
-              onBlur={(e) => {
-                renameMember(m.id, e.currentTarget.value);
-                if (!e.currentTarget.value.trim())
-                  e.currentTarget.value = m.name;
-              }}
-            />
-          </label>
-        ))}
+        <label className="f">
+          Seu nome
+          <input
+            key={me?.name}
+            type="text"
+            maxLength={24}
+            defaultValue={me?.name}
+            onBlur={(e) => {
+              renameMe(e.currentTarget.value);
+              if (e.currentTarget.value.trim().length < 2)
+                e.currentTarget.value = me?.name ?? "";
+            }}
+          />
+        </label>
+        <label className="f">
+          Outra pessoa
+          <input type="text" value={partner?.name ?? "—"} readOnly disabled />
+        </label>
       </div>
+
+      {!partner && <InvitePanel />}
 
       <h4>Aparência</h4>
       <Segmented<Theme>
@@ -80,18 +113,6 @@ export function SettingsSheet() {
       </Chips>
       <p className="meta">Cômodos desligados somem de Hoje e das Rotinas.</p>
 
-      <h4>Quem usa este aparelho</h4>
-      <Segmented
-        label="Quem usa"
-        value={me?.id ?? ""}
-        onChange={setMe}
-        options={s.members.map((m) => ({ value: m.id, label: m.name }))}
-      />
-      <p className="meta">
-        Cada “Feito” é registrado no nome de quem está usando. O botão no topo
-        troca rápido.
-      </p>
-
       <h4>Método</h4>
       <button
         type="button"
@@ -101,39 +122,54 @@ export function SettingsSheet() {
         Como o método funciona
       </button>
 
-      <h4>Dados</h4>
-      <p className="meta">
-        Os dados ficam salvos só neste navegador. A sincronização entre os dois
-        aparelhos chega com a conta Ocafy.
-      </p>
-      {confirmReset ? (
-        <div className="frow">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              closeSheet();
-              resetAll();
-            }}
-          >
-            Sim, apagar tudo
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setConfirmReset(false)}
-          >
-            Cancelar
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="link"
-          onClick={() => setConfirmReset(true)}
-        >
-          Apagar dados e recomeçar
+      <h4>Conta</h4>
+      <div className="frow">
+        <button type="button" className="btn" disabled={busy} onClick={signOut}>
+          Sair
         </button>
+      </div>
+      <p className="meta">
+        Os dados ficam na nuvem e sincronizam entre os aparelhos de vocês dois.
+      </p>
+
+      {s.isOwner &&
+        (confirmDelete ? (
+          <div className="mt-2">
+            <p className="meta">
+              Isso apaga <b>todos os dados da casa, dos dois</b>. Não dá para
+              desfazer.
+            </p>
+            <div className="frow">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={removeHouse}
+              >
+                Sim, apagar a casa
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="link"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Apagar a casa e todos os dados
+          </button>
+        ))}
+      {error && (
+        <p role="alert" className="text-[0.9rem] font-bold text-late-t">
+          {error}
+        </p>
       )}
     </Sheet>
   );

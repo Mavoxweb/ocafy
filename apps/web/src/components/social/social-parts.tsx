@@ -51,6 +51,27 @@ export function WeeklyDuel() {
       ? "Empatados — bora desempatar"
       : `${(A > B ? a : b)?.name} está na frente por ${Math.abs(A - B)} XP`;
 
+  if (!b) {
+    return (
+      <>
+        <h2>
+          Sua semana<small>desde segunda</small>
+        </h2>
+        <Panel>
+          <div className="duel" style={{ gridTemplateColumns: "1fr" }}>
+            <div>
+              <span className="tag a">{a?.name}</span>
+              <div className="v mt-2">{A}</div>
+            </div>
+          </div>
+          <p className="meta text-center">
+            O desafio da dupla começa quando a outra pessoa entrar na casa.
+          </p>
+        </Panel>
+      </>
+    );
+  }
+
   return (
     <>
       <h2>

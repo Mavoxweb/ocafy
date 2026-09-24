@@ -2,7 +2,6 @@
 
 import type { CompletionEntry, RoomId } from "@ocafy/core";
 import {
-  DEFAULT_REWARDS,
   INVENTORY_DEST,
   type InventoryDest,
   OFFICE_GOALS,
@@ -29,50 +28,49 @@ import {
   taskTitle,
   xpOf,
 } from "./selectors";
-import {
-  type AppState,
-  DEFAULT_LITTER,
-  type Member,
-  type Reward,
-  store,
-} from "./store";
+import { type AppState, store } from "./store";
+import { mutate, mutateStrict, refresh } from "./sync";
+import { trpc } from "./trpc";
 import { closeSheet, toast } from "./ui";
+
+/**
+ * Padrão de todas as ações: 1) atualiza o cache local na hora (otimista);
+ * 2) envia ao servidor via `mutate`, que reconcilia com o snapshot depois.
+ */
 
 const get = () => store.getState();
 
-/* ================= onboarding ================= */
+/* ================= casa / convite ================= */
 
 export interface SetupInput {
   houseName: string;
-  nameA: string;
-  nameB: string;
+  memberName: string;
   rooms: RoomId[];
   litter: AppState["litter"];
   litterStock: number | null;
 }
 
-export function createHousehold(input: SetupInput) {
-  const a: Member = { id: uid(), name: input.nameA.trim(), slot: "a" };
-  const b: Member = { id: uid(), name: input.nameB.trim(), slot: "b" };
-  const rewards: Reward[] = DEFAULT_REWARDS.map((r) => ({ ...r, id: uid() }));
-  store.set((s) => ({
-    ...s,
-    household: {
-      id: uid(),
-      name: input.houseName.trim(),
-      createdAt: new Date().toISOString(),
-    },
-    members: [a, b],
-    meId: a.id,
-    rooms: Array.from(new Set<RoomId>([...input.rooms, "casa"])),
-    litter: input.litter,
-    litterStock: input.litterStock,
-    rewards,
-  }));
+/** Lança em caso de erro (a tela de onboarding mostra a mensagem). */
+export async function createHousehold(input: SetupInput) {
+  await mutateStrict(() => trpc.household.create.mutate(input));
+  await refresh();
 }
 
-export function resetAll() {
-  store.reset();
+export async function joinHousehold(code: string, memberName: string) {
+  await mutateStrict(() => trpc.household.join.mutate({ code, memberName }));
+  await refresh();
+}
+
+/** Gera (ou reaproveita) o convite e o coloca no cache. */
+export async function ensureInvite() {
+  const inv = await mutateStrict(() => trpc.household.createInvite.mutate());
+  store.set((s) => ({ ...s, invite: inv }));
+  return inv;
+}
+
+export async function deleteHousehold() {
+  await mutateStrict(() => trpc.household.delete.mutate());
+  await refresh();
 }
 
 /* ================= tarefas ================= */
@@ -83,10 +81,14 @@ interface CompleteOptions {
   rect?: DOMRect | null;
   /** Desfaz efeitos extras (ex.: refeição marcada como retirada). */
   undoExtra?: () => void;
-  silentToast?: boolean;
+  /** false = o chamador registra no servidor por outro endpoint. */
+  remote?: boolean;
 }
 
-export function completeTask(taskId: string, opts: CompleteOptions = {}) {
+export function completeTask(
+  taskId: string,
+  opts: CompleteOptions = {},
+): CompletionEntry | undefined {
   const s0 = get();
   const t = TASK_MAP[taskId];
   const me = currentMember(s0);
@@ -124,6 +126,19 @@ export function completeTask(taskId: string, opts: CompleteOptions = {}) {
         : s.litterStock,
   }));
 
+  if (opts.remote !== false) {
+    void mutate(() =>
+      trpc.tasks.complete.mutate({
+        id: entry.id,
+        taskKey: taskId,
+        at: entry.at,
+        dateKey: entry.dateKey,
+        pts,
+        note: opts.note,
+      }),
+    );
+  }
+
   const s1 = get();
   floatXP(opts.rect, `+${pts} XP`);
   if (opts.rect)
@@ -135,12 +150,10 @@ export function completeTask(taskId: string, opts: CompleteOptions = {}) {
     );
   vibrate(15);
 
-  if (!opts.silentToast) {
-    toast(`${taskTitle(s1, t)}${bonus ? " · bônus no prazo" : ""}`, () => {
-      opts.undoExtra?.();
-      removeCompletion(entry.id);
-    });
-  }
+  toast(`${taskTitle(s1, t)}${bonus ? " · bônus no prazo" : ""}`, () => {
+    opts.undoExtra?.();
+    removeCompletion(entry.id);
+  });
 
   const lv = levelOf(xpOf(s1, me.id));
   if (lv.level > beforeLevel)
@@ -152,6 +165,7 @@ export function completeTask(taskId: string, opts: CompleteOptions = {}) {
   for (const b of achievements(s1, now))
     if (b.unlocked && !beforeBadges.has(b.id))
       banner(b.icon, `Conquista: ${b.name}`, b.description);
+  return entry;
 }
 
 export function removeCompletion(id: string) {
@@ -177,6 +191,7 @@ export function removeCompletion(id: string) {
           : s.litterStock,
     };
   });
+  void mutate(() => trpc.tasks.remove.mutate({ id }));
 }
 
 /** Desmarca a conclusão de hoje (checklist de rotina). */
@@ -196,49 +211,43 @@ export function setFrequency(taskId: string, mn: number, mx: number) {
       [taskId]: { ...s.overrides[taskId], min: mn, max: mx },
     },
   }));
+  void mutate(() =>
+    trpc.tasks.setOverride.mutate({ taskKey: taskId, min: mn, max: mx }),
+  );
 }
 
 export function togglePause(taskId: string) {
+  const off = !get().overrides[taskId]?.off;
   store.set((s) => ({
     ...s,
-    overrides: {
-      ...s.overrides,
-      [taskId]: { ...s.overrides[taskId], off: !s.overrides[taskId]?.off },
-    },
+    overrides: { ...s.overrides, [taskId]: { ...s.overrides[taskId], off } },
   }));
+  void mutate(() =>
+    trpc.tasks.setOverride.mutate({ taskKey: taskId, paused: off }),
+  );
 }
 
 /* ================= pessoas / ajustes ================= */
 
-export function switchMe() {
-  const s = get();
-  const other = partnerOf(s, s.meId);
-  if (!other) return;
-  store.set((st) => ({ ...st, meId: other.id }));
-  toast(`Agora registrando como ${other.name}`);
-}
-
-export function setMe(id: string) {
-  store.set((s) => ({ ...s, meId: id }));
-}
-
-export function renameMember(id: string, name: string) {
+export function renameMe(name: string) {
   const v = name.trim().slice(0, 24);
-  if (!v) return;
+  const me = currentMember(get());
+  if (v.length < 2 || !me) return;
   store.set((s) => ({
     ...s,
-    members: s.members.map((m) => (m.id === id ? { ...m, name: v } : m)),
+    members: s.members.map((m) => (m.id === me.id ? { ...m, name: v } : m)),
   }));
+  void mutate(() => trpc.household.rename.mutate({ name: v }));
 }
 
 export function toggleRoom(room: RoomId) {
   if (room === "casa") return;
-  store.set((s) => ({
-    ...s,
-    rooms: s.rooms.includes(room)
-      ? s.rooms.filter((r) => r !== room)
-      : [...s.rooms, room],
-  }));
+  const cur = get().rooms;
+  const next = cur.includes(room)
+    ? cur.filter((r) => r !== room)
+    : [...cur, room];
+  store.set((s) => ({ ...s, rooms: next }));
+  void mutate(() => trpc.household.setRooms.mutate({ rooms: next }));
 }
 
 /* ================= gatos ================= */
@@ -250,8 +259,9 @@ export function setLitter(patch: Partial<AppState["litter"]>) {
       next.maxDays = next.minDays;
     if (patch.maxDays != null && next.maxDays < next.minDays)
       next.minDays = next.maxDays;
-    return { ...s, litter: { ...DEFAULT_LITTER, ...next } };
+    return { ...s, litter: next };
   });
+  void mutate(() => trpc.litter.update.mutate(patch));
 }
 
 export function adjustStock(delta: number) {
@@ -259,6 +269,7 @@ export function adjustStock(delta: number) {
     ...s,
     litterStock: Math.max(0, (s.litterStock ?? 0) + delta),
   }));
+  void mutate(() => trpc.litter.adjustStock.mutate({ delta }));
 }
 
 /* ================= cozinha ================= */
@@ -282,6 +293,15 @@ export function addMeal(d: MealDraft) {
     by: me.id,
   };
   store.set((s) => ({ ...s, meals: [...s.meals, m] }));
+  void mutate(() =>
+    trpc.meals.add.mutate({
+      id: m.id,
+      dateKey: m.date,
+      slot: m.slot,
+      dish: m.dish,
+      protein: m.protein,
+    }),
+  );
   const a = mealAlert(m, new Date());
   toast(
     a
@@ -290,60 +310,56 @@ export function addMeal(d: MealDraft) {
   );
 }
 
-export function pullMeal(id: string, rect?: DOMRect | null) {
+function setMealFlag(id: string, flag: "pulledBy" | "cookedBy", on: boolean) {
   const me = currentMember(get());
-  const m = get().meals.find((x) => x.id === id);
-  if (!me || !m) return;
   store.set((s) => ({
     ...s,
-    meals: s.meals.map((x) => (x.id === id ? { ...x, pulledBy: me.id } : x)),
+    meals: s.meals.map((x) =>
+      x.id === id ? { ...x, [flag]: on ? me?.id : undefined } : x,
+    ),
   }));
+  void mutate(() =>
+    flag === "pulledBy"
+      ? trpc.meals.setPulled.mutate({ id, value: on })
+      : trpc.meals.setCooked.mutate({ id, value: on }),
+  );
+}
+
+export function pullMeal(id: string, rect?: DOMRect | null) {
+  const m = get().meals.find((x) => x.id === id);
+  if (!m) return;
+  setMealFlag(id, "pulledBy", true);
   completeTask("desc", {
     note: m.dish || proteinName(m.protein),
     rect,
-    undoExtra: () =>
-      store.set((s) => ({
-        ...s,
-        meals: s.meals.map((x) =>
-          x.id === id ? { ...x, pulledBy: undefined } : x,
-        ),
-      })),
+    undoExtra: () => setMealFlag(id, "pulledBy", false),
   });
 }
 
 export function cookMeal(id: string, rect?: DOMRect | null) {
-  const me = currentMember(get());
   const m = get().meals.find((x) => x.id === id);
-  if (!me || !m) return;
-  store.set((s) => ({
-    ...s,
-    meals: s.meals.map((x) => (x.id === id ? { ...x, cookedBy: me.id } : x)),
-  }));
+  if (!m) return;
+  setMealFlag(id, "cookedBy", true);
   completeTask("cozinhar", {
     note: m.dish || (m.slot === "almoco" ? "Almoço" : "Jantar"),
     rect,
-    undoExtra: () =>
-      store.set((s) => ({
-        ...s,
-        meals: s.meals.map((x) =>
-          x.id === id ? { ...x, cookedBy: undefined } : x,
-        ),
-      })),
+    undoExtra: () => setMealFlag(id, "cookedBy", false),
   });
 }
 
 export function deleteMeal(id: string) {
   store.set((s) => ({ ...s, meals: s.meals.filter((m) => m.id !== id) }));
+  void mutate(() => trpc.meals.remove.mutate({ id }));
 }
 
 /* ================= escritório ================= */
 
-function currentMonday() {
-  return mondayKey(new Date());
-}
+const currentMonday = () => mondayKey(new Date());
 
 export function startOffice() {
-  store.set((s) => ({ ...s, office: { ...s.office, start: currentMonday() } }));
+  const startDate = currentMonday();
+  store.set((s) => ({ ...s, office: { ...s.office, start: startDate } }));
+  void mutate(() => trpc.office.start.mutate({ startDate }));
   banner("📦", "Projeto Escritório começou!", "Um objetivo por semana");
 }
 
@@ -353,17 +369,26 @@ export function toggleOfficeStep(
   rect?: DOMRect | null,
 ) {
   const was = officeStepDone(get(), goalId, i);
+  const startDate = get().office.start ?? currentMonday();
   store.set((s) => ({
     ...s,
     office: {
       ...s.office,
-      start: s.office.start ?? currentMonday(),
+      start: s.office.start ?? startDate,
       steps: {
         ...s.office.steps,
         [goalId]: { ...s.office.steps[goalId], [i]: !was },
       },
     },
   }));
+  void mutate(() =>
+    trpc.office.setStep.mutate({
+      goalKey: goalId,
+      index: i,
+      value: !was,
+      startDate,
+    }),
+  );
   vibrate(10);
   if (!was) floatXP(rect, "✓");
 }
@@ -383,7 +408,24 @@ export function finishOfficeGoal(goalId: string, rect?: DOMRect | null) {
       },
     },
   }));
-  completeTask("escritorio", { note: g.t, rect });
+  const entry = completeTask("escritorio", {
+    note: g.t,
+    rect,
+    remote: false,
+  });
+  if (entry) {
+    void mutate(() =>
+      trpc.office.finishGoal.mutate({
+        goalKey: g.id,
+        completion: {
+          id: entry.id,
+          at: entry.at,
+          dateKey: entry.dateKey,
+          pts: entry.pts,
+        },
+      }),
+    );
+  }
   banner("🏆", "Objetivo concluído!", g.t);
   if (!officeCurrent(get()))
     setTimeout(
@@ -400,23 +442,26 @@ export function addInventoryItem(
   const me = currentMember(get());
   const n = name.trim();
   if (!me || !n) return false;
+  const item = {
+    id: uid(),
+    name: n.slice(0, 60),
+    category,
+    dest,
+    who: me.id,
+    at: new Date().toISOString(),
+  };
   store.set((s) => ({
     ...s,
-    office: {
-      ...s.office,
-      inventory: [
-        ...s.office.inventory,
-        {
-          id: uid(),
-          name: n.slice(0, 60),
-          category,
-          dest,
-          who: me.id,
-          at: new Date().toISOString(),
-        },
-      ],
-    },
+    office: { ...s.office, inventory: [...s.office.inventory, item] },
   }));
+  void mutate(() =>
+    trpc.office.addItem.mutate({
+      id: item.id,
+      name: item.name,
+      category,
+      dest,
+    }),
+  );
   toast(`${n} → ${INVENTORY_DEST[dest]}`);
   return true;
 }
@@ -429,6 +474,7 @@ export function removeInventoryItem(id: string) {
       inventory: s.office.inventory.filter((i) => i.id !== id),
     },
   }));
+  void mutate(() => trpc.office.removeItem.mutate({ id }));
 }
 
 export function setInventoryDest(id: string, dest: InventoryDest) {
@@ -441,6 +487,7 @@ export function setInventoryDest(id: string, dest: InventoryDest) {
       ),
     },
   }));
+  void mutate(() => trpc.office.setItemDest.mutate({ id, dest }));
 }
 
 /* ================= social ================= */
@@ -462,6 +509,7 @@ export function toggleReaction(completionId: string, emoji: ReactionKey) {
         : [...s.reactions, { id: uid(), completionId, memberId: me.id, emoji }],
     };
   });
+  void mutate(() => trpc.social.toggleReaction.mutate({ completionId, emoji }));
   vibrate(8);
 }
 
@@ -470,13 +518,18 @@ export function requestTrade(taskId: string) {
   const me = currentMember(s);
   const other = partnerOf(s, me?.id);
   const t = TASK_MAP[taskId];
-  if (!me || !other || !t) return;
+  if (!me || !t) return;
+  if (!other) {
+    toast("Convide a outra pessoa para pedir ajuda.");
+    return;
+  }
+  const id = uid();
   store.set((st) => ({
     ...st,
     trades: [
       ...st.trades,
       {
-        id: uid(),
+        id,
         taskId,
         requesterId: me.id,
         assigneeId: other.id,
@@ -485,6 +538,7 @@ export function requestTrade(taskId: string) {
       },
     ],
   }));
+  void mutate(() => trpc.social.requestTrade.mutate({ id, taskKey: taskId }));
   closeSheet();
   toast(`Pedido enviado para ${other.name}: ${taskTitle(s, t)}`);
 }
@@ -502,6 +556,7 @@ export function respondTrade(id: string, accept: boolean) {
         : t,
     ),
   }));
+  void mutate(() => trpc.social.respondTrade.mutate({ id, accept }));
   toast(accept ? "Combinado! A tarefa fica com você." : "Pedido recusado.");
 }
 
@@ -510,18 +565,14 @@ export function respondTrade(id: string, accept: boolean) {
 export function addReward(title: string, costCoins: number, icon: string) {
   const t = title.trim();
   if (t.length < 2 || !(costCoins >= 1)) return false;
-  store.set((s) => ({
-    ...s,
-    rewards: [
-      ...s.rewards,
-      {
-        id: uid(),
-        title: t.slice(0, 60),
-        costCoins: Math.round(costCoins),
-        icon: icon || "🎁",
-      },
-    ],
-  }));
+  const r = {
+    id: uid(),
+    title: t.slice(0, 60),
+    costCoins: Math.round(costCoins),
+    icon: icon || "🎁",
+  };
+  store.set((s) => ({ ...s, rewards: [...s.rewards, r] }));
+  void mutate(() => trpc.store.addReward.mutate(r));
   toast(`“${t}” entrou na lojinha.`);
   return true;
 }
@@ -535,12 +586,13 @@ export function buyReward(rewardId: string) {
     toast("Moedas da casa insuficientes.");
     return;
   }
+  const id = uid();
   store.set((st) => ({
     ...st,
     purchases: [
       ...st.purchases,
       {
-        id: uid(),
+        id,
         rewardId,
         memberId: me.id,
         costCoins: r.costCoins,
@@ -549,6 +601,7 @@ export function buyReward(rewardId: string) {
       },
     ],
   }));
+  void mutate(() => trpc.store.buy.mutate({ id, rewardId }));
   confetti(window.innerWidth / 2, window.innerHeight * 0.4, 50, 1);
   toast(
     `Pedido enviado: ${r.title}. ${partnerOf(s, me.id)?.name ?? "A outra pessoa"} precisa aprovar.`,
@@ -571,6 +624,7 @@ export function resolvePurchase(id: string, approved: boolean) {
         : x,
     ),
   }));
+  void mutate(() => trpc.store.resolve.mutate({ id, approved }));
   toast(
     approved
       ? `Aprovado para ${memberName(s, p.memberId)}!`
