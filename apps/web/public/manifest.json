@@ -1,0 +1,17 @@
+{
+  "name": "Ocafy",
+  "short_name": "Ocafy",
+  "description": "Deixa a casa ok.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFB7C5",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
