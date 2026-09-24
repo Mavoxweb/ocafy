@@ -1,6 +1,7 @@
 "use client";
 
 import { InvitePanel } from "@/components/shell/invite-panel";
+import { AvatarFace } from "@/components/ui/avatar";
 import { IconFlame, RoomIcon } from "@/components/ui/icons";
 import { Group } from "@/components/ui/primitives";
 import { completeTask, pullMeal, respondTrade } from "@/lib/actions";
@@ -77,7 +78,7 @@ export function PeopleCards() {
         return (
           <div key={m.id} className={`person ${m.id === me?.id ? "me" : ""}`}>
             <span className={`pav ${m.slot}`}>
-              {(m.name[0] ?? "?").toUpperCase()}
+              <AvatarFace member={m} />
             </span>
             <div className="pinfo">
               <b>{m.name}</b>

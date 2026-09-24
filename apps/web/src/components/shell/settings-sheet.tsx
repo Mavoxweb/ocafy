@@ -1,9 +1,16 @@
 "use client";
 
+import { AvatarFace } from "@/components/ui/avatar";
 import { OcafyLockup } from "@/components/ui/logo";
 import { Chip, Chips, Segmented } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
-import { deleteHousehold, renameMe, toggleRoom } from "@/lib/actions";
+import {
+  deleteHousehold,
+  removeMyAvatar,
+  renameMe,
+  setMyAvatar,
+  toggleRoom,
+} from "@/lib/actions";
 import { authClient } from "@/lib/auth/client";
 import { ROOM_ORDER } from "@/lib/catalog";
 import { currentMember, partnerOf } from "@/lib/selectors";
@@ -18,6 +25,7 @@ import {
 } from "@/lib/ui";
 import { ROOM_NAMES } from "@ocafy/core";
 import { useState } from "react";
+import { AvatarCropper } from "./avatar-cropper";
 import { InvitePanel } from "./invite-panel";
 
 export function SettingsSheet() {
@@ -27,6 +35,7 @@ export function SettingsSheet() {
   const partner = partnerOf(s, me?.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [error, setError] = useState("");
 
   async function signOut() {
@@ -62,6 +71,50 @@ export function SettingsSheet() {
       <SheetHead onClose={closeSheet}>
         <h3>Ajustes</h3>
       </SheetHead>
+
+      <h4 style={{ marginTop: 6 }}>Foto de perfil</h4>
+      {cropFile ? (
+        <AvatarCropper
+          file={cropFile}
+          onCancel={() => setCropFile(null)}
+          onSave={(url) => {
+            setMyAvatar(url);
+            setCropFile(null);
+          }}
+        />
+      ) : (
+        <div className="frow" style={{ gap: 14 }}>
+          <span
+            className="avatar"
+            style={{
+              width: 64,
+              height: 64,
+              display: "grid",
+              placeItems: "center",
+            }}
+          >
+            <AvatarFace member={me} />
+          </span>
+          <label className="btn btn-small" style={{ cursor: "pointer" }}>
+            {me?.avatar ? "Trocar foto" : "Escolher foto"}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                e.currentTarget.value = ""; // permite escolher o mesmo arquivo de novo
+                if (f) setCropFile(f);
+              }}
+            />
+          </label>
+          {me?.avatar && (
+            <button type="button" className="link" onClick={removeMyAvatar}>
+              Remover
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid2">
         <label className="f">

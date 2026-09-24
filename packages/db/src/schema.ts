@@ -43,6 +43,11 @@ export const householdMembers = pgTable(
       .default("member")
       .notNull(),
     slot: text("slot", { enum: ["a", "b"] }).notNull(),
+    /** Foto de perfil já recortada/reduzida no cliente (base64). Nunca vai no snapshot: sai por /api/avatar/:id. */
+    avatarData: text("avatar_data"),
+    avatarType: text("avatar_type"),
+    /** Muda a cada troca de foto; entra na URL para invalidar o cache do navegador. */
+    avatarVersion: bigint("avatar_version", { mode: "number" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [

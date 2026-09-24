@@ -3,7 +3,7 @@ import { db, households } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
-import { appRouter, createCallerFactory } from "../src/index";
+import { appRouter, createCallerFactory, getAvatar } from "../src/index";
 
 /**
  * Testes de integração contra um banco Neon REAL. Só rodam quando há
@@ -403,6 +403,76 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     if (snap.status !== "ready") throw new Error();
     expect(snap.data.rev).toBe(p2.rev);
     expect((await as(`test-${randomUUID()}`).household.pulse()).rev).toBeNull();
+  });
+
+  it("foto de perfil: valida, isola por casa e sai fora do snapshot", async () => {
+    const png = (extra = 200) =>
+      `data:image/png;base64,${Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.alloc(extra, 7),
+      ]).toString("base64")}`;
+
+    const owner = await newHouse("Casa Foto");
+    const { code: inviteCode } = await owner.c.household.createInvite();
+    const partnerId = `test-${randomUUID()}`;
+    const partner = as(partnerId);
+    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    const outsider = await newHouse("Casa Alheia");
+
+    // rejeita: tipo não suportado, mime que não bate com os bytes, gigante, minúsculo
+    expect(
+      await code(() =>
+        owner.c.household.setAvatar({
+          dataUrl: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await code(() =>
+        owner.c.household.setAvatar({
+          dataUrl: png().replace("image/png", "image/jpeg"),
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await code(() =>
+        owner.c.household.setAvatar({ dataUrl: png(130 * 1024) }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await code(() => owner.c.household.setAvatar({ dataUrl: png(10) })),
+    ).toBe("BAD_REQUEST");
+
+    const { avatarVersion } = await owner.c.household.setAvatar({
+      dataUrl: png(),
+    });
+    const snap = await partner.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const alex = snap.data.members.find((m) => m.name === "Alex");
+    expect(alex?.avatarVersion).toBe(avatarVersion);
+    expect(
+      snap.data.members.find((m) => m.name === "Bia")?.avatarVersion,
+    ).toBeNull();
+    expect(JSON.stringify(snap.data)).not.toContain("iVBORw"); // base64 do PNG não vai no snapshot
+
+    // a outra pessoa da casa lê; quem é de outra casa não
+    const own = await owner.c.household.snapshot();
+    if (own.status !== "ready") throw new Error();
+    const alexId = own.data.meId;
+    const seenByPartner = await getAvatar(partnerId, alexId);
+    expect(seenByPartner?.type).toBe("image/png");
+    expect(seenByPartner?.bytes.length).toBe(208);
+    expect(await getAvatar(outsider.userId, alexId)).toBeNull();
+    expect(await getAvatar(`test-${randomUUID()}`, alexId)).toBeNull();
+
+    // cada um só troca a própria foto; remover limpa tudo
+    await owner.c.household.removeAvatar();
+    expect(await getAvatar(partnerId, alexId)).toBeNull();
+    const after = await owner.c.household.snapshot();
+    if (after.status !== "ready") throw new Error();
+    expect(after.data.members.every((m) => m.avatarVersion === null)).toBe(
+      true,
+    );
   });
 
   it("apagar a casa remove tudo em cascata", async () => {

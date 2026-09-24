@@ -16,6 +16,8 @@ export interface Member {
   id: string;
   name: string;
   slot: Slot;
+  /** URL da foto (/api/avatar/…) ou data URL enquanto o envio está em andamento. */
+  avatar: string | null;
 }
 
 export interface MealRecord {

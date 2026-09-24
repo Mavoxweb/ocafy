@@ -240,6 +240,31 @@ export function renameMe(name: string) {
   void mutate(() => trpc.household.rename.mutate({ name: v }));
 }
 
+/** Foto de perfil já recortada (data URL). Aparece na hora e é enviada em seguida. */
+export function setMyAvatar(dataUrl: string) {
+  const me = currentMember(get());
+  if (!me) return;
+  store.set((s) => ({
+    ...s,
+    members: s.members.map((m) =>
+      m.id === me.id ? { ...m, avatar: dataUrl } : m,
+    ),
+  }));
+  void mutate(() => trpc.household.setAvatar.mutate({ dataUrl }));
+}
+
+export function removeMyAvatar() {
+  const me = currentMember(get());
+  if (!me) return;
+  store.set((s) => ({
+    ...s,
+    members: s.members.map((m) =>
+      m.id === me.id ? { ...m, avatar: null } : m,
+    ),
+  }));
+  void mutate(() => trpc.household.removeAvatar.mutate());
+}
+
 export function toggleRoom(room: RoomId) {
   if (room === "casa") return;
   const cur = get().rooms;

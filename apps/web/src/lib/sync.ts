@@ -31,7 +31,14 @@ function fromSnapshot(d: Snapshot): AppState {
     ...EMPTY_STATE,
     status: "ready",
     household: d.household,
-    members: d.members,
+    members: d.members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      slot: m.slot,
+      avatar: m.avatarVersion
+        ? `/api/avatar/${m.id}?v=${m.avatarVersion}`
+        : null,
+    })),
     meId: d.meId,
     isOwner: d.isOwner,
     invite: d.invite,

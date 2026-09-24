@@ -69,7 +69,7 @@ export const socialRouter = router({
         });
       }
       const [other] = await db
-        .select()
+        .select({ id: householdMembers.id })
         .from(householdMembers)
         .where(
           and(

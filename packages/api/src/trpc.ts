@@ -7,7 +7,19 @@ export interface Context {
   userId: string | null;
 }
 
-export type Member = typeof householdMembers.$inferSelect;
+/** Colunas do membro usadas nas procedures (a foto, pesada, fica de fora). */
+const memberColumns = {
+  id: householdMembers.id,
+  householdId: householdMembers.householdId,
+  userId: householdMembers.userId,
+  displayName: householdMembers.displayName,
+  role: householdMembers.role,
+  slot: householdMembers.slot,
+};
+
+export type Member = {
+  [K in keyof typeof memberColumns]: (typeof memberColumns)[K]["_"]["data"];
+};
 
 const t = initTRPC.context<Context>().create();
 
@@ -31,7 +43,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  */
 export const memberProcedure = authedProcedure.use(async ({ ctx, next }) => {
   const [member] = await db
-    .select()
+    .select(memberColumns)
     .from(householdMembers)
     .where(eq(householdMembers.userId, ctx.userId))
     .limit(1);

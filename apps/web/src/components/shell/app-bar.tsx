@@ -1,5 +1,6 @@
 "use client";
 
+import { AvatarFace } from "@/components/ui/avatar";
 import { IconMoon, IconSliders, IconSun } from "@/components/ui/icons";
 import { OcafyLockup } from "@/components/ui/logo";
 import { WEEKDAYS, capitalize } from "@/lib/dates";
@@ -42,7 +43,7 @@ export function AppBar() {
           onClick={() => openSheet({ kind: "settings" })}
           aria-label={`${me?.name}: abrir ajustes`}
         >
-          {(me?.name[0] ?? "?").toUpperCase()}
+          <AvatarFace member={me} />
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[0.82rem] font-semibold text-muted">

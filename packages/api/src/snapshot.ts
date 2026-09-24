@@ -30,7 +30,13 @@ export interface Snapshot {
   household: { id: string; name: string; createdAt: string };
   meId: string;
   isOwner: boolean;
-  members: { id: string; name: string; slot: "a" | "b" }[];
+  members: {
+    id: string;
+    name: string;
+    slot: "a" | "b";
+    /** Versão da foto (null = sem foto); a imagem sai por /api/avatar/:id?v=… */
+    avatarVersion: number | null;
+  }[];
   rooms: RoomId[];
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
@@ -125,7 +131,14 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     inviteRows,
   ] = await db.batch([
     db
-      .select()
+      .select({
+        id: householdMembers.id,
+        userId: householdMembers.userId,
+        displayName: householdMembers.displayName,
+        role: householdMembers.role,
+        slot: householdMembers.slot,
+        avatarVersion: householdMembers.avatarVersion,
+      })
       .from(householdMembers)
       .where(eq(householdMembers.householdId, hid)),
     db.select().from(households).where(eq(households.id, hid)),
@@ -195,7 +208,12 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     isOwner: member.role === "owner",
     members: memberRows
       .sort((a, b) => a.slot.localeCompare(b.slot))
-      .map((m) => ({ id: m.id, name: m.displayName, slot: m.slot })),
+      .map((m) => ({
+        id: m.id,
+        name: m.displayName,
+        slot: m.slot,
+        avatarVersion: m.avatarVersion,
+      })),
     rooms: roomRows.map((r) => r.slug as RoomId),
     litter: litter
       ? {

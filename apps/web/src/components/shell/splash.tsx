@@ -1,35 +1,32 @@
 "use client";
 
-import { OcafySymbol } from "@/components/ui/logo";
+import { AnimatedLogo } from "@/components/brand/animated-logo";
 import { useEffect, useState } from "react";
 
+/**
+ * Abertura do app: logo animada + espera pelos dados. A splash só sai quando
+ * a animação terminou E os dados estão prontos (`ready`).
+ */
 export function Splash({ ready }: { ready: boolean }) {
+  const [animated, setAnimated] = useState(false);
   const [out, setOut] = useState(false);
   const [gone, setGone] = useState(false);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !animated) return;
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const t1 = setTimeout(() => setOut(true), reduced ? 200 : 1000);
-    const t2 = setTimeout(() => setGone(true), reduced ? 700 : 1500);
+    const t1 = setTimeout(() => setOut(true), reduced ? 0 : 250);
+    const t2 = setTimeout(() => setGone(true), reduced ? 500 : 900);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [ready]);
+  }, [ready, animated]);
 
   if (gone) return null;
   return (
     <div className={`splash ${out ? "out" : ""}`} aria-hidden="true">
-      <div className="sp-in">
-        <OcafySymbol size={92} />
-        <div className="owm" style={{ fontSize: 46, marginTop: 14 }}>
-          ocafy
-        </div>
-        <div className="mt-2 text-base font-semibold text-muted">
-          Deixa a casa ok.
-        </div>
-      </div>
+      <AnimatedLogo size={112} onDone={() => setAnimated(true)} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { parseAvatarDataUrl } from "../avatar";
 import { createHouseholdSchema, joinSchema, roomId } from "../schemas/index";
 import { loadSnapshot } from "../snapshot";
 import { authedProcedure, memberProcedure, router } from "../trpc";
@@ -201,6 +202,27 @@ export const householdRouter = router({
         .where(eq(householdMembers.id, ctx.member.id));
       return { ok: true };
     }),
+
+  /** Foto de perfil (data URL já recortada no cliente). */
+  setAvatar: memberProcedure
+    .input(z.object({ dataUrl: z.string().max(200_000) }))
+    .mutation(async ({ ctx, input }) => {
+      const a = parseAvatarDataUrl(input.dataUrl);
+      const avatarVersion = Date.now();
+      await db
+        .update(householdMembers)
+        .set({ avatarData: a.base64, avatarType: a.type, avatarVersion })
+        .where(eq(householdMembers.id, ctx.member.id));
+      return { avatarVersion };
+    }),
+
+  removeAvatar: memberProcedure.mutation(async ({ ctx }) => {
+    await db
+      .update(householdMembers)
+      .set({ avatarData: null, avatarType: null, avatarVersion: null })
+      .where(eq(householdMembers.id, ctx.member.id));
+    return { ok: true };
+  }),
 
   setRooms: memberProcedure
     .input(z.object({ rooms: z.array(roomId).max(8) }))

@@ -1,5 +1,6 @@
 "use client";
 
+import { AvatarFace } from "@/components/ui/avatar";
 import { Bar, Group, Panel } from "@/components/ui/primitives";
 import { removeCompletion, toggleReaction } from "@/lib/actions";
 import {
@@ -176,7 +177,7 @@ export function Feed() {
             return (
               <article key={e.id} className="feed-item">
                 <span className={`pav ${who?.slot ?? "a"}`}>
-                  {(who?.name[0] ?? "?").toUpperCase()}
+                  <AvatarFace member={who} />
                 </span>
                 <div className="min-w-0">
                   <div className="text-[0.95rem] leading-snug">
