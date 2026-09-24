@@ -21,6 +21,8 @@ let pending = 0;
 let chain: Promise<unknown> = Promise.resolve();
 let inflight: Promise<void> | null = null;
 let lastApplied = "";
+/** Revisão do último snapshot aplicado: o polling só baixa tudo se ela mudou. */
+let lastRev: number | null = null;
 let settleTimer: ReturnType<typeof setTimeout> | undefined;
 let started = false;
 
@@ -48,17 +50,30 @@ function fromSnapshot(d: Snapshot): AppState {
 }
 
 /** Baixa e aplica o snapshot (ignorado enquanto há mutações em andamento). */
-export function refresh(): Promise<void> {
-  if (inflight) return inflight;
+export function refresh(opts: { force?: boolean } = {}): Promise<void> {
+  // Um refresh forçado nunca é engolido por outro em andamento (que pode ser só um pulse).
+  if (inflight)
+    return opts.force ? inflight.then(() => refresh(opts)) : inflight;
   inflight = (async () => {
     try {
+      // Polling barato: só a revisão da casa (bytes). Snapshot completo apenas se mudou.
+      if (
+        !opts.force &&
+        lastRev != null &&
+        store.getState().status === "ready"
+      ) {
+        const { rev } = await trpc.household.pulse.query();
+        if (rev === lastRev) return;
+      }
       const res = await trpc.household.snapshot.query();
       if (pending > 0) return; // uma mutação está a caminho: reconcilia depois
       if (res.status === "none") {
         lastApplied = "";
+        lastRev = null;
         store.set(() => ({ ...EMPTY_STATE, status: "nohousehold" }));
         return;
       }
+      lastRev = res.data.rev;
       const json = JSON.stringify(res.data);
       if (json === lastApplied && store.getState().status === "ready") return;
       lastApplied = json;
@@ -66,6 +81,7 @@ export function refresh(): Promise<void> {
     } catch (e) {
       if (errorCode(e) === "UNAUTHORIZED") {
         lastApplied = "";
+        lastRev = null;
         store.set(() => ({ ...EMPTY_STATE, status: "anon" }));
       } else if (store.getState().status === "loading") {
         store.set((s) => ({ ...s, status: "error" }));
@@ -103,7 +119,7 @@ export async function mutate<T>(run: () => Promise<T>): Promise<T | undefined> {
     settleTimer = setTimeout(() => {
       if (pending === 0) {
         lastApplied = ""; // força reaplicar (desfaz o que o servidor recusou)
-        void refresh();
+        void refresh({ force: true });
       }
     }, SETTLE_MS);
   }
@@ -145,5 +161,6 @@ export function startSync(opts: { initial?: boolean } = {}): () => void {
 /** Limpa o cache (logout). */
 export function resetSync() {
   lastApplied = "";
+  lastRev = null;
   store.set(() => ({ ...EMPTY_STATE, status: "loading" }));
 }

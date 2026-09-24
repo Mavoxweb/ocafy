@@ -10,7 +10,7 @@ import {
   storeRewards,
 } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createHouseholdSchema, joinSchema, roomId } from "../schemas/index";
 import { loadSnapshot } from "../snapshot";
@@ -34,13 +34,27 @@ const cause = (e: unknown) => (e as { cause?: unknown } | null)?.cause ?? e;
 export const householdRouter = router({
   /** Estado completo da casa (ou `none` se a conta ainda não tem casa). */
   snapshot: authedProcedure.query(async ({ ctx }) => {
-    const [member] = await db
-      .select()
-      .from(householdMembers)
-      .where(eq(householdMembers.userId, ctx.userId))
-      .limit(1);
-    if (!member) return { status: "none" as const };
-    return { status: "ready" as const, data: await loadSnapshot(member) };
+    const data = await loadSnapshot(ctx.userId);
+    return data
+      ? { status: "ready" as const, data }
+      : { status: "none" as const };
+  }),
+
+  /**
+   * Consulta barata para o polling: só a revisão da casa. O app baixa o
+   * snapshot completo apenas quando ela muda.
+   */
+  pulse: authedProcedure.query(async ({ ctx }) => {
+    const [row] = await db
+      .select({ rev: households.rev })
+      .from(households)
+      .where(
+        eq(
+          households.id,
+          sql`(select ${householdMembers.householdId} from ${householdMembers} where ${householdMembers.userId} = ${ctx.userId})`,
+        ),
+      );
+    return { rev: row?.rev ?? null };
   }),
 
   create: authedProcedure

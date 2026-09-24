@@ -53,12 +53,12 @@ export interface SetupInput {
 /** Lança em caso de erro (a tela de onboarding mostra a mensagem). */
 export async function createHousehold(input: SetupInput) {
   await mutateStrict(() => trpc.household.create.mutate(input));
-  await refresh();
+  await refresh({ force: true });
 }
 
 export async function joinHousehold(code: string, memberName: string) {
   await mutateStrict(() => trpc.household.join.mutate({ code, memberName }));
-  await refresh();
+  await refresh({ force: true });
 }
 
 /** Gera (ou reaproveita) o convite e o coloca no cache. */
@@ -70,7 +70,7 @@ export async function ensureInvite() {
 
 export async function deleteHousehold() {
   await mutateStrict(() => trpc.household.delete.mutate());
-  await refresh();
+  await refresh({ force: true });
 }
 
 /* ================= tarefas ================= */

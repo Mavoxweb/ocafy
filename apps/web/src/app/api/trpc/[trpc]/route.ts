@@ -15,6 +15,10 @@ const handler = (req: Request) =>
       const { data } = await auth.getSession();
       return { userId: data?.user?.id ?? null };
     },
+    // Dados privados de cada casa: nunca guardar em cache compartilhado (CDN/proxy).
+    responseMeta: () => ({
+      headers: new Headers({ "cache-control": "private, no-store" }),
+    }),
     onError({ error, path }) {
       if (error.code === "INTERNAL_SERVER_ERROR") {
         console.error(`[trpc] ${path ?? "?"}:`, error);

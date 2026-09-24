@@ -59,7 +59,7 @@ export function AuthForm({ mode }: { mode: "in" | "up" }) {
         return;
       }
       resetSync();
-      await refresh();
+      await refresh({ force: true });
       router.replace(convite ? `/onboarding?convite=${convite}` : "/");
     } catch (ex) {
       setError(friendly(ex instanceof Error ? ex.message : undefined, mode));

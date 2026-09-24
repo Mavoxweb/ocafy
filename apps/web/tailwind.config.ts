@@ -35,6 +35,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          "var(--font-manrope)",
           "Manrope",
           "system-ui",
           "-apple-system",

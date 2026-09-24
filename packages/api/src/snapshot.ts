@@ -18,14 +18,15 @@ import {
   taskOverrides,
   taskTrades,
 } from "@ocafy/db";
-import { and, eq, gt, isNull } from "drizzle-orm";
-import type { Member } from "./trpc";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 
 /**
  * Estado completo da casa, em JSON puro (datas em ISO). O formato espelha o
  * `AppState` do app web para o cliente só precisar trocar o cache.
  */
 export interface Snapshot {
+  /** Revisão da casa: sobe a cada mudança (trigger no banco). */
+  rev: number;
   household: { id: string; name: string; createdAt: string };
   meId: string;
   isOwner: boolean;
@@ -97,14 +98,17 @@ export interface Snapshot {
 
 const iso = (d: Date) => d.toISOString();
 
-export async function loadSnapshot(member: Member): Promise<Snapshot> {
-  const hid = member.householdId;
+/**
+ * Uma única ida ao banco: a casa é resolvida por subconsulta a partir do
+ * userId (sem consulta prévia do membro). Devolve `null` se a conta não tem casa.
+ */
+export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
+  const hid = sql`(select ${householdMembers.householdId} from ${householdMembers} where ${householdMembers.userId} = ${userId})`;
   const now = new Date();
 
-  // Uma única ida ao banco (transação em lote).
   const [
-    [household],
     memberRows,
+    [household],
     roomRows,
     [litter],
     overrideRows,
@@ -120,11 +124,11 @@ export async function loadSnapshot(member: Member): Promise<Snapshot> {
     tradeRows,
     inviteRows,
   ] = await db.batch([
-    db.select().from(households).where(eq(households.id, hid)),
     db
       .select()
       .from(householdMembers)
       .where(eq(householdMembers.householdId, hid)),
+    db.select().from(households).where(eq(households.id, hid)),
     db.select().from(rooms).where(eq(rooms.householdId, hid)),
     db.select().from(litterSettings).where(eq(litterSettings.householdId, hid)),
     db.select().from(taskOverrides).where(eq(taskOverrides.householdId, hid)),
@@ -156,6 +160,9 @@ export async function loadSnapshot(member: Member): Promise<Snapshot> {
       ),
   ]);
 
+  const member = memberRows.find((m) => m.userId === userId);
+  if (!member || !household) return null;
+
   const overrides: Snapshot["overrides"] = {};
   for (const o of overrideRows) {
     overrides[o.taskKey] = {
@@ -178,6 +185,7 @@ export async function loadSnapshot(member: Member): Promise<Snapshot> {
   const invite = memberRows.length < 2 ? inviteRows[0] : undefined;
 
   return {
+    rev: household.rev,
     household: {
       id: household.id,
       name: household.name,

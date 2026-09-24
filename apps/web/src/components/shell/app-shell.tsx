@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => void refresh()}
+            onClick={() => void refresh({ force: true })}
           >
             Tentar de novo
           </button>

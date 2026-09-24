@@ -389,6 +389,22 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(Object.keys(snap.data.office.done)).toEqual([]);
   });
 
+  it("pulse: a revisão sobe a cada mudança e casa com o snapshot", async () => {
+    const { c } = await newHouse("Casa Pulse");
+    const p0 = await c.household.pulse();
+    expect((await c.household.pulse()).rev).toBe(p0.rev); // sem mudança → igual
+    const { id } = await c.tasks.complete({ taskKey: "lixo", ...completion() });
+    const p1 = await c.household.pulse();
+    expect(p1.rev).toBeGreaterThan(p0.rev ?? -1);
+    await c.tasks.remove({ id });
+    const p2 = await c.household.pulse();
+    expect(p2.rev).toBeGreaterThan(p1.rev ?? -1);
+    const snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.rev).toBe(p2.rev);
+    expect((await as(`test-${randomUUID()}`).household.pulse()).rev).toBeNull();
+  });
+
   it("apagar a casa remove tudo em cascata", async () => {
     const { c, householdId } = await newHouse("Casa Efêmera");
     await c.tasks.complete({ taskKey: "lixo", ...completion() });

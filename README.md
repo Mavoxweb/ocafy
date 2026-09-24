@@ -52,6 +52,21 @@ pnpm --filter @ocafy/web dev            # http://localhost:3000
 
 O protótipo `index.html` continua como referência visual.
 
+## Deploy (Vercel)
+
+1. Importe o repositório com **Root Directory = `apps/web`** (o `vercel.json` já fixa as funções em `gru1`, perto do Neon em São Paulo).
+2. Variáveis de ambiente (Production e Preview):
+
+| Variável | Valor |
+|---|---|
+| `DATABASE_URL` | connection string **pooled** da branch (Neon → Connect) |
+| `NEON_AUTH_BASE_URL` | URL do Neon Auth da mesma branch (`…neonauth…/neondb/auth`) |
+| `NEON_AUTH_COOKIE_SECRET` | segredo novo: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+
+3. Depois do primeiro deploy, cadastre o domínio (ex.: `https://ocafy.vercel.app`) como **domínio confiável** no Neon Auth
+   (`neon neon-auth domain add …` ou Console → Auth → Domains).
+4. Migrations: `pnpm --filter @ocafy/db db:migrate` com `DATABASE_URL_UNPOOLED` da branch de destino.
+
 ## Marca
 
 | Arquivo | Uso |

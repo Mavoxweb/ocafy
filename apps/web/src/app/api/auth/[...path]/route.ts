@@ -1,3 +1,12 @@
 import { auth } from "@/lib/auth/server";
 
-export const { GET, POST } = auth.handler();
+type Handler = ReturnType<typeof auth.handler>;
+let handler: Handler | undefined;
+const get = () => {
+  handler ??= auth.handler();
+  return handler;
+};
+
+// Handlers criados no primeiro request (não no import), para o build não depender do ambiente.
+export const GET: Handler["GET"] = (...args) => get().GET(...args);
+export const POST: Handler["POST"] = (...args) => get().POST(...args);

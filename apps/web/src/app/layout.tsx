@@ -1,5 +1,6 @@
 import { StoreBoot } from "@/components/shell/store-boot";
 import type { Metadata, Viewport } from "next";
+import { Manrope } from "next/font/google";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,14 @@ export const viewport: Viewport = {
 };
 
 // Aplica o tema salvo antes da primeira pintura (evita flash claro → escuro).
+// Fonte servida pelo próprio app (sem CSS externo bloqueando a renderização).
+const manrope = Manrope({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+  variable: "--font-manrope",
+});
+
 const themeScript = `try{var t=localStorage.getItem('ocafy-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}`;
 
 export default function RootLayout({
@@ -25,20 +34,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className={manrope.variable} suppressHydrationWarning>
       <head>
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: script estático (constante local) que aplica o tema antes da pintura */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body>
         <StoreBoot />
