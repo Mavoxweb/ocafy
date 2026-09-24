@@ -66,7 +66,7 @@ export default function OfficePage() {
       </Link>
       <div className="hero mint">
         <span className="hico">
-          <RoomIcon room="quarto2" size={26} />
+          <RoomIcon room="escritorio" size={26} />
         </span>
         <div className="htx">
           <b>

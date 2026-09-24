@@ -1,5 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { db, households } from "@ocafy/db";
+import {
+  DEFAULT_PROFILE,
+  type HouseProfile,
+  defaultRoomCounts,
+  roomsFromCounts,
+} from "@ocafy/core";
+import {
+  db,
+  householdMembers,
+  households,
+  litterSettings,
+  onboardingEvents,
+  pets,
+  rooms,
+} from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
@@ -18,27 +32,45 @@ const enabled =
 const caller = createCallerFactory(appRouter);
 const as = (userId: string | null) => caller({ userId });
 
-const litter = {
-  cats: 3,
-  boxes: 2,
-  kgPerBox: 4,
-  bagKg: 4,
-  minDays: 5,
-  maxDays: 7,
-};
 const created: string[] = [];
 
-async function newHouse(name = "Casa Teste", stock: number | null = 6) {
+type PetInput = {
+  id?: string;
+  name: string;
+  species: "dog" | "cat";
+  size?: "mini" | "small" | "medium" | "large" | "giant";
+};
+const catPets = (n: number): PetInput[] =>
+  Array.from({ length: n }, (_, i) => ({
+    name: `Gato ${i + 1}`,
+    species: "cat",
+  }));
+const apto = () =>
+  roomsFromCounts(defaultRoomCounts("apartment", "m")).map((r) => ({
+    kind: r.kind,
+  }));
+
+async function newHouse(
+  name = "Casa Teste",
+  stock: number | null = 6,
+  over: {
+    profile?: Partial<Omit<HouseProfile, "mode">> & {
+      mode?: "solo" | "couple";
+    };
+    pets?: PetInput[];
+  } = {},
+) {
   const userId = `test-${randomUUID()}`;
   const c = as(userId);
   const { householdId } = await c.household.create({
     houseName: name,
     memberName: "Alex",
-    rooms: ["cozinha", "gatos"],
-    litter,
-    litterStock: stock,
+    profile: { ...DEFAULT_PROFILE, mode: "couple", ...over.profile },
+    rooms: apto(),
+    pets: over.pets ?? catPets(3),
   });
   created.push(householdId);
+  if (stock != null) await c.litter.adjustStock({ delta: stock });
   return { userId, c, householdId };
 }
 
@@ -93,7 +125,18 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(d.members).toHaveLength(1);
     expect(d.members[0].slot).toBe("a");
     expect(d.isOwner).toBe(true);
-    expect(d.rooms.sort()).toEqual(["casa", "cozinha", "gatos"]);
+    expect(d.profile.mode).toBe("couple");
+    expect(d.rooms.map((r) => r.slug)).toEqual([
+      "quarto1",
+      "quarto2",
+      "banheiro",
+      "sala",
+      "cozinha",
+      "servico",
+      "varanda",
+    ]);
+    expect(d.pets).toHaveLength(3);
+    expect(d.litter.cats).toBe(3);
     expect(d.litterStock).toBe(6);
     expect(d.rewards.length).toBeGreaterThanOrEqual(6);
     expect(d.completions).toEqual([]);
@@ -106,9 +149,9 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
         as(userId).household.create({
           houseName: "Outra",
           memberName: "Alex",
+          profile: { ...DEFAULT_PROFILE, mode: "couple" },
           rooms: [],
-          litter,
-          litterStock: null,
+          pets: [],
         }),
       ),
     ).toBe("CONFLICT");
@@ -473,6 +516,243 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(after.data.members.every((m) => m.avatarVersion === null)).toBe(
       true,
     );
+  });
+
+  it("perfil: o servidor só aceita tarefas que existem no plano da casa", async () => {
+    const semPets = await newHouse("Casa Sem Pets", null, { pets: [] });
+    // sem cães/gatos, tarefas de pets não existem
+    expect(
+      await code(() =>
+        semPets.c.tasks.complete({ taskKey: "m_areia", ...completion() }),
+      ),
+    ).toBe("BAD_REQUEST");
+    await semPets.c.tasks.complete({ taskKey: "aspirar", ...completion() });
+
+    const { c } = await newHouse("Casa Cão", null, {
+      pets: [{ name: "Thor", species: "dog", size: "giant" }],
+    });
+    const snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const dog = snap.data.pets[0];
+    expect(dog).toMatchObject({ name: "Thor", species: "dog", size: "giant" });
+    const key = `dog_walk_am@${dog.id}`;
+    const r = await c.tasks.complete({ taskKey: key, ...completion() });
+    expect(r.pts).toBeGreaterThan(0);
+    // outra casa não pode usar a tarefa do cão de Thor
+    const other = await newHouse("Casa Outra", null, { pets: [] });
+    expect(
+      await code(() =>
+        other.c.tasks.complete({ taskKey: key, ...completion() }),
+      ),
+    ).toBe("BAD_REQUEST");
+  });
+
+  it("updateProfile: cômodos, pets e ids estáveis; histórico preservado", async () => {
+    const { c } = await newHouse("Casa Reforma", null, {
+      pets: [{ name: "Rex", species: "dog", size: "small" }],
+    });
+    let snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const rex = snap.data.pets[0];
+    await c.tasks.complete({ taskKey: "banheiro", ...completion() });
+
+    // 2º banheiro, um quarto a menos, apelido, cão cresce e chega um gato
+    await c.household.updateProfile({
+      profile: { ...snap.data.profile, mode: "couple", intensity: "full" },
+      rooms: [
+        { kind: "quarto", label: "Quarto do João" },
+        { kind: "banheiro" },
+        { kind: "banheiro" },
+        { kind: "sala" },
+        { kind: "cozinha" },
+      ],
+      pets: [
+        { id: rex.id, name: "Rex", species: "dog", size: "large" },
+        { name: "Mia", species: "cat" },
+      ],
+    });
+    snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.profile.intensity).toBe("full");
+    expect(snap.data.rooms.map((r) => `${r.slug}:${r.label}`)).toEqual([
+      "quarto1:Quarto do João",
+      "banheiro:Banheiro 1",
+      "banheiro_2:Banheiro 2",
+      "sala:Sala",
+      "cozinha:Cozinha",
+    ]);
+    expect(snap.data.pets).toHaveLength(2);
+    expect(snap.data.pets.find((p) => p.name === "Rex")).toMatchObject({
+      id: rex.id,
+      size: "large",
+    });
+    expect(snap.data.litter.cats).toBe(1);
+    expect(snap.data.completions.map((x) => x.taskId)).toEqual(["banheiro"]);
+    // o 2º banheiro entrou no plano
+    await c.tasks.complete({ taskKey: "banheiro@banheiro_2", ...completion() });
+    expect(snap.data.rev).toBeGreaterThan(0);
+
+    // id de pet de outra casa é ignorado (vira pet novo), nunca sequestra o alheio
+    const other = await newHouse("Casa Vizinha", null, {
+      pets: [{ name: "Bob", species: "dog", size: "mini" }],
+    });
+    const os = await other.c.household.snapshot();
+    if (os.status !== "ready") throw new Error();
+    const bob = os.data.pets[0];
+    await c.household.updateProfile({
+      profile: { ...snap.data.profile, mode: "couple" },
+      rooms: [{ kind: "cozinha" }],
+      pets: [{ id: bob.id, name: "Intruso", species: "dog" }],
+    });
+    const after = await other.c.household.snapshot();
+    if (after.status !== "ready") throw new Error();
+    expect(after.data.pets[0]).toMatchObject({ id: bob.id, name: "Bob" });
+  });
+
+  it("modo Solo: sem convites; Casal com duas pessoas não vira Solo", async () => {
+    const solo = await newHouse("Casa Solo", null, {
+      profile: { mode: "solo" },
+    });
+    expect(await code(() => solo.c.household.createInvite())).toBe("CONFLICT");
+
+    const couple = await newHouse("Casa Dois", null);
+    const { code: inviteCode } = await couple.c.household.createInvite();
+    await as(`test-${randomUUID()}`).household.join({
+      code: inviteCode,
+      memberName: "Bia",
+    });
+    const snap = await couple.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(
+      await code(() =>
+        couple.c.household.updateProfile({
+          profile: { ...snap.data.profile, mode: "solo" },
+          rooms: [{ kind: "cozinha" }],
+          pets: [],
+        }),
+      ),
+    ).toBe("CONFLICT");
+
+    // Solo → Casal libera o convite
+    const ssnap = await solo.c.household.snapshot();
+    if (ssnap.status !== "ready") throw new Error();
+    await solo.c.household.updateProfile({
+      profile: { ...ssnap.data.profile, mode: "couple" },
+      rooms: [{ kind: "cozinha" }],
+      pets: [],
+    });
+    expect(await code(() => solo.c.household.createInvite())).toBe("OK");
+  });
+
+  it("valida cômodos e o modo Família ainda não existe", async () => {
+    const { c } = await newHouse("Casa Limites", null);
+    const snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const profile = { ...snap.data.profile, mode: "couple" as const };
+    expect(
+      await code(() =>
+        c.household.updateProfile({
+          profile,
+          rooms: [
+            { kind: "cozinha" },
+            { kind: "cozinha" },
+            { kind: "cozinha" },
+          ],
+          pets: [],
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await code(() =>
+        c.household.updateProfile({
+          profile: { ...profile, mode: "family" as never },
+          rooms: [],
+          pets: [],
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+  });
+
+  it("casa antiga (formato anterior) continua funcionando sem perder histórico", async () => {
+    // Simula uma casa criada antes do perfil: cômodos com slugs antigos, linhas gatos/casa,
+    // gatos convertidos pela migração e histórico de conclusões.
+    const userId = `test-${randomUUID()}`;
+    const [h] = await db
+      .insert(households)
+      .values({ name: "Casa Legada" })
+      .returning();
+    created.push(h.id);
+    await db.insert(householdMembers).values({
+      householdId: h.id,
+      userId,
+      displayName: "Alex",
+      role: "owner",
+      slot: "a",
+    });
+    const legacyRooms = [
+      "quarto1",
+      "quarto2",
+      "sala",
+      "cozinha",
+      "banheiro",
+      "servico",
+      "gatos",
+      "casa",
+    ];
+    await db.insert(rooms).values(
+      legacyRooms.map((slug) => ({
+        householdId: h.id,
+        slug,
+        kind: slug.startsWith("quarto") ? "quarto" : slug,
+      })),
+    );
+    await db.insert(litterSettings).values({ householdId: h.id });
+    await db.insert(pets).values(
+      catPets(3).map((p) => ({
+        householdId: h.id,
+        name: p.name,
+        species: p.species,
+        litter: "litter" as const,
+      })),
+    );
+
+    const c = as(userId);
+    const snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.rooms.map((r) => r.slug)).toEqual([
+      "quarto1",
+      "quarto2",
+      "banheiro",
+      "sala",
+      "cozinha",
+      "servico",
+    ]);
+    // as tarefas do catálogo antigo seguem no plano padrão da casa
+    for (const k of ["aspirar", "banheiro", "m_areia", "area_troca", "lixo"]) {
+      const r = await c.tasks.complete({ taskKey: k, ...completion() });
+      expect(r.pts).toBeGreaterThan(0);
+    }
+    const after = await c.household.snapshot();
+    if (after.status !== "ready") throw new Error();
+    expect(after.data.completions).toHaveLength(5);
+  });
+
+  it("onboarding: registra passos por conta", async () => {
+    const userId = `test-${randomUUID()}`;
+    const c = as(userId);
+    await c.household.onboardingStep({ step: "rooms" });
+    await c.household.onboardingStep({ step: "pets" });
+    expect(
+      await code(() => c.household.onboardingStep({ step: "Passo Inválido!" })),
+    ).toBe("BAD_REQUEST");
+    const rows = await db
+      .select()
+      .from(onboardingEvents)
+      .where(eq(onboardingEvents.userId, userId));
+    expect(rows.map((r) => r.step).sort()).toEqual(["pets", "rooms"]);
+    await db
+      .delete(onboardingEvents)
+      .where(eq(onboardingEvents.userId, userId));
   });
 
   it("apagar a casa remove tudo em cascata", async () => {

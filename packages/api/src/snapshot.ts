@@ -1,4 +1,9 @@
-import type { LitterSettings, RoomId } from "@ocafy/core";
+import type {
+  HouseProfile,
+  LitterSettings,
+  Pet,
+  RoomInstance,
+} from "@ocafy/core";
 import {
   completionReactions,
   completions,
@@ -12,6 +17,7 @@ import {
   officeGoals,
   officeProjects,
   officeSteps,
+  pets,
   rewardPurchases,
   rooms,
   storeRewards,
@@ -19,6 +25,7 @@ import {
   taskTrades,
 } from "@ocafy/db";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { petOf, profileOf, roomsOf } from "./plan";
 
 /**
  * Estado completo da casa, em JSON puro (datas em ISO). O formato espelha o
@@ -37,7 +44,10 @@ export interface Snapshot {
     /** Versão da foto (null = sem foto); a imagem sai por /api/avatar/:id?v=… */
     avatarVersion: number | null;
   }[];
-  rooms: RoomId[];
+  /** Perfil da casa: entrada do motor de rotinas (o plano é calculado no cliente, igual ao servidor). */
+  profile: HouseProfile;
+  rooms: RoomInstance[];
+  pets: Pet[];
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
   overrides: Record<string, { min?: number; max?: number; off?: boolean }>;
@@ -116,6 +126,7 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     memberRows,
     [household],
     roomRows,
+    petRows,
     [litter],
     overrideRows,
     completionRows,
@@ -143,6 +154,7 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       .where(eq(householdMembers.householdId, hid)),
     db.select().from(households).where(eq(households.id, hid)),
     db.select().from(rooms).where(eq(rooms.householdId, hid)),
+    db.select().from(pets).where(eq(pets.householdId, hid)),
     db.select().from(litterSettings).where(eq(litterSettings.householdId, hid)),
     db.select().from(taskOverrides).where(eq(taskOverrides.householdId, hid)),
     db.select().from(completions).where(eq(completions.householdId, hid)),
@@ -214,7 +226,9 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
         slot: m.slot,
         avatarVersion: m.avatarVersion,
       })),
-    rooms: roomRows.map((r) => r.slug as RoomId),
+    profile: profileOf(household),
+    rooms: roomsOf(roomRows),
+    pets: petRows.map(petOf),
     litter: litter
       ? {
           cats: litter.catsCount,

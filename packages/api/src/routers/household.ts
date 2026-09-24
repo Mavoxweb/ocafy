@@ -1,21 +1,29 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { DEFAULT_REWARDS } from "@ocafy/core";
+import { DEFAULT_REWARDS, buildRooms } from "@ocafy/core";
 import {
   db,
   householdMembers,
   households,
   invites,
   litterSettings,
+  onboardingEvents,
+  pets,
   rooms,
   storeRewards,
 } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, notInArray, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { z } from "zod";
 import { parseAvatarDataUrl } from "../avatar";
 import { sendEmail } from "../email/send";
 import { inviteEmail } from "../email/templates";
-import { createHouseholdSchema, joinSchema, roomId } from "../schemas/index";
+import {
+  createHouseholdSchema,
+  joinSchema,
+  onboardingStepSchema,
+  updateProfileSchema,
+} from "../schemas/index";
 import { loadSnapshot } from "../snapshot";
 import { authedProcedure, memberProcedure, router } from "../trpc";
 
@@ -33,6 +41,79 @@ const isUniqueViolation = (e: unknown) =>
   ("code" in e ? (e as { code?: string }).code === "23505" : false);
 
 const cause = (e: unknown) => (e as { cause?: unknown } | null)?.cause ?? e;
+
+type Ops = [BatchItem<"pg">, ...BatchItem<"pg">[]];
+
+/** Modo Solo = 1 pessoa; Casal = até 2. */
+const maxMembers = (mode: string) => (mode === "solo" ? 1 : 2);
+
+const petValues = (p: {
+  name: string;
+  species: (typeof pets.$inferInsert)["species"];
+  size?: (typeof pets.$inferInsert)["size"] | null;
+  coat?: (typeof pets.$inferInsert)["coat"] | null;
+  outdoorAccess?: boolean | null;
+  litter?: (typeof pets.$inferInsert)["litter"] | null;
+}) => {
+  const dog = p.species === "dog";
+  return {
+    name: p.name,
+    species: p.species,
+    // Porte, pelagem e acesso à rua só fazem sentido para cães; a caixa só para gatos.
+    size: dog ? (p.size ?? "medium") : null,
+    coat: dog ? (p.coat ?? "short") : null,
+    outdoorAccess: dog ? (p.outdoorAccess ?? false) : null,
+    litter: p.species === "cat" ? (p.litter ?? "litter") : null,
+  };
+};
+
+const profileColumns = (p: {
+  mode: "solo" | "couple";
+  dwelling: "apartment" | "house" | "townhouse" | "studio";
+  size: "s" | "m" | "l";
+  intensity: "light" | "standard" | "full";
+  cooksAtHome: boolean;
+  usesFrozen: boolean;
+  hasWasher: boolean;
+  hasPlants: boolean;
+  hasCar: boolean;
+  officeProject: boolean;
+}) => ({
+  mode: p.mode,
+  dwelling: p.dwelling,
+  size: p.size,
+  intensity: p.intensity,
+  cooksAtHome: p.cooksAtHome,
+  usesFrozen: p.usesFrozen,
+  hasWasher: p.hasWasher,
+  hasPlants: p.hasPlants,
+  hasCar: p.hasCar,
+  officeProject: p.officeProject,
+});
+
+/** Barra convites quando a casa já está completa (Solo = 1, Casal = 2). */
+async function assertRoomForMember(householdId: string) {
+  const [[{ n }], [house]] = await db.batch([
+    db
+      .select({ n: count() })
+      .from(householdMembers)
+      .where(eq(householdMembers.householdId, householdId)),
+    db
+      .select({ mode: households.mode })
+      .from(households)
+      .where(eq(households.id, householdId)),
+  ]);
+  const mode = house?.mode ?? "couple";
+  if (n >= maxMembers(mode)) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message:
+        mode === "solo"
+          ? "Esta casa está no modo Solo. Mude para Casal em Minha casa para convidar alguém."
+          : "A casa já tem duas pessoas.",
+    });
+  }
+}
 
 export const householdRouter = router({
   /** Estado completo da casa (ou `none` se a conta ainda não tem casa). */
@@ -64,12 +145,16 @@ export const householdRouter = router({
     .input(createHouseholdSchema)
     .mutation(async ({ ctx, input }) => {
       const householdId = randomUUID();
-      const roomSlugs = Array.from(new Set([...input.rooms, "casa" as const]));
+      const built = buildRooms(input.rooms);
+      const cats = input.pets.filter((p) => p.species === "cat").length;
       try {
-        await db.batch([
-          db
-            .insert(households)
-            .values({ id: householdId, name: input.houseName }),
+        const ops: Ops = [
+          db.insert(households).values({
+            id: householdId,
+            name: input.houseName,
+            ...profileColumns(input.profile),
+            onboardedAt: new Date(),
+          }),
           db.insert(householdMembers).values({
             householdId,
             userId: ctx.userId,
@@ -77,23 +162,38 @@ export const householdRouter = router({
             role: "owner",
             slot: "a",
           }),
-          db
-            .insert(rooms)
-            .values(roomSlugs.map((slug) => ({ householdId, slug }))),
           db.insert(litterSettings).values({
             householdId,
-            catsCount: input.litter.cats,
-            boxesCount: input.litter.boxes,
-            kgPerBox: input.litter.kgPerBox,
-            bagKg: input.litter.bagKg,
-            minDays: input.litter.minDays,
-            maxDays: Math.max(input.litter.minDays, input.litter.maxDays),
-            stockBags: input.litterStock,
+            catsCount: Math.max(1, cats),
+            boxesCount: Math.max(1, Math.ceil(cats / 2)),
           }),
           db
             .insert(storeRewards)
             .values(DEFAULT_REWARDS.map((r) => ({ ...r, householdId }))),
-        ]);
+        ];
+        if (built.length) {
+          ops.push(
+            db.insert(rooms).values(
+              built.map((r) => ({
+                householdId,
+                slug: r.slug,
+                kind: r.kind,
+                label: r.custom,
+                position: r.position,
+              })),
+            ),
+          );
+        }
+        if (input.pets.length) {
+          ops.push(
+            db
+              .insert(pets)
+              .values(
+                input.pets.map((p) => ({ householdId, ...petValues(p) })),
+              ),
+          );
+        }
+        await db.batch(ops);
       } catch (e) {
         if (isUniqueViolation(cause(e))) {
           throw new TRPCError({
@@ -125,14 +225,23 @@ export const householdRouter = router({
         message: "Convite inválido ou expirado.",
       });
     }
-    const [{ n }] = await db
-      .select({ n: count() })
-      .from(householdMembers)
-      .where(eq(householdMembers.householdId, invite.householdId));
-    if (n >= 2) {
+    const [[{ n }], [house]] = await db.batch([
+      db
+        .select({ n: count() })
+        .from(householdMembers)
+        .where(eq(householdMembers.householdId, invite.householdId)),
+      db
+        .select({ mode: households.mode })
+        .from(households)
+        .where(eq(households.id, invite.householdId)),
+    ]);
+    if (n >= maxMembers(house?.mode ?? "couple")) {
       throw new TRPCError({
         code: "CONFLICT",
-        message: "Esta casa já tem duas pessoas.",
+        message:
+          house?.mode === "solo"
+            ? "Esta casa é individual (modo Solo)."
+            : "Esta casa já tem duas pessoas.",
       });
     }
     try {
@@ -164,16 +273,7 @@ export const householdRouter = router({
 
   /** Reaproveita o convite ativo ou gera um novo (7 dias). */
   createInvite: memberProcedure.mutation(async ({ ctx }) => {
-    const [{ n }] = await db
-      .select({ n: count() })
-      .from(householdMembers)
-      .where(eq(householdMembers.householdId, ctx.householdId));
-    if (n >= 2) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "A casa já tem duas pessoas.",
-      });
-    }
+    await assertRoomForMember(ctx.householdId);
     const [active] = await db
       .select()
       .from(invites)
@@ -204,16 +304,7 @@ export const householdRouter = router({
       z.object({ email: z.string().trim().toLowerCase().email().max(120) }),
     )
     .mutation(async ({ ctx, input }) => {
-      const [{ n }] = await db
-        .select({ n: count() })
-        .from(householdMembers)
-        .where(eq(householdMembers.householdId, ctx.householdId));
-      if (n >= 2) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "A casa já tem duas pessoas.",
-        });
-      }
+      await assertRoomForMember(ctx.householdId);
       const [active] = await db
         .select()
         .from(invites)
@@ -290,18 +381,134 @@ export const householdRouter = router({
     return { ok: true };
   }),
 
-  setRooms: memberProcedure
-    .input(z.object({ rooms: z.array(roomId).max(8) }))
+  /**
+   * Atualiza o perfil da casa (modo, tipo, tamanho, intensidade, cômodos e pets) de uma só vez.
+   * Nada do histórico é apagado: tarefas que saem do plano só deixam de aparecer; se voltarem
+   * (mesmos cômodos/pets), o histórico volta junto.
+   */
+  updateProfile: memberProcedure
+    .input(updateProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      const slugs = Array.from(new Set([...input.rooms, "casa" as const]));
-      await db.batch([
-        db.delete(rooms).where(eq(rooms.householdId, ctx.householdId)),
+      const [[{ n }], existingPets] = await db.batch([
         db
-          .insert(rooms)
-          .values(
-            slugs.map((slug) => ({ householdId: ctx.householdId, slug })),
-          ),
+          .select({ n: count() })
+          .from(householdMembers)
+          .where(eq(householdMembers.householdId, ctx.householdId)),
+        db
+          .select({ id: pets.id })
+          .from(pets)
+          .where(eq(pets.householdId, ctx.householdId)),
       ]);
+      if (n > maxMembers(input.profile.mode)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "Há duas pessoas nesta casa; o modo Solo só vale para uma pessoa.",
+        });
+      }
+
+      const built = buildRooms(input.rooms);
+      const knownPets = new Set(existingPets.map((p) => p.id));
+      const keep = input.pets.filter((p) => p.id && knownPets.has(p.id));
+      const fresh = input.pets.filter((p) => !p.id || !knownPets.has(p.id));
+      const keepIds = keep.map((p) => p.id as string);
+      const cats = input.pets.filter((p) => p.species === "cat").length;
+      const slugs = built.map((r) => r.slug);
+
+      const ops: Ops = [
+        db
+          .update(households)
+          .set({
+            ...profileColumns(input.profile),
+            rev: sql`${households.rev} + 1`,
+          })
+          .where(eq(households.id, ctx.householdId)),
+        // Só remove cômodos "de verdade"; as linhas antigas gatos/casa ficam quietas.
+        db
+          .delete(rooms)
+          .where(
+            and(
+              eq(rooms.householdId, ctx.householdId),
+              slugs.length
+                ? notInArray(rooms.slug, [...slugs, "gatos", "casa"])
+                : sql`${rooms.slug} not in ('gatos', 'casa')`,
+            ),
+          ),
+        db
+          .delete(pets)
+          .where(
+            and(
+              eq(pets.householdId, ctx.householdId),
+              keepIds.length ? notInArray(pets.id, keepIds) : undefined,
+            ),
+          ),
+      ];
+      if (built.length) {
+        ops.push(
+          db
+            .insert(rooms)
+            .values(
+              built.map((r) => ({
+                householdId: ctx.householdId,
+                slug: r.slug,
+                kind: r.kind,
+                label: r.custom,
+                position: r.position,
+              })),
+            )
+            .onConflictDoUpdate({
+              target: [rooms.householdId, rooms.slug],
+              set: {
+                kind: sql`excluded.kind`,
+                label: sql`excluded.label`,
+                position: sql`excluded.position`,
+              },
+            }),
+        );
+      }
+      for (const p of keep) {
+        ops.push(
+          db
+            .update(pets)
+            .set(petValues(p))
+            .where(
+              and(
+                eq(pets.id, p.id as string),
+                eq(pets.householdId, ctx.householdId),
+              ),
+            ),
+        );
+      }
+      if (fresh.length) {
+        ops.push(
+          db.insert(pets).values(
+            fresh.map((p) => ({
+              householdId: ctx.householdId,
+              ...petValues(p),
+            })),
+          ),
+        );
+      }
+      // A areia usa a contagem real de gatos (os cálculos de estoque partem dela).
+      if (cats > 0) {
+        ops.push(
+          db
+            .update(litterSettings)
+            .set({ catsCount: cats })
+            .where(eq(litterSettings.householdId, ctx.householdId)),
+        );
+      }
+      await db.batch(ops);
+      return { ok: true };
+    }),
+
+  /** Passo do onboarding concluído/visto (mede onde as pessoas desistem). Sem dados pessoais. */
+  onboardingStep: authedProcedure
+    .input(onboardingStepSchema)
+    .mutation(async ({ ctx, input }) => {
+      await db
+        .insert(onboardingEvents)
+        .values({ userId: ctx.userId, step: input.step });
       return { ok: true };
     }),
 

@@ -2,17 +2,15 @@
 
 import { AvatarFace } from "@/components/ui/avatar";
 import { OcafyLockup } from "@/components/ui/logo";
-import { Chip, Chips, Segmented } from "@/components/ui/primitives";
+import { Segmented } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
 import {
   deleteHousehold,
   removeMyAvatar,
   renameMe,
   setMyAvatar,
-  toggleRoom,
 } from "@/lib/actions";
 import { authClient } from "@/lib/auth/client";
-import { ROOM_ORDER } from "@/lib/catalog";
 import { currentMember, partnerOf } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { errorMessage } from "@/lib/trpc";
@@ -23,7 +21,7 @@ import {
   setTheme,
   useTheme,
 } from "@/lib/ui";
-import { ROOM_NAMES } from "@ocafy/core";
+import Link from "next/link";
 import { useState } from "react";
 import { AvatarCropper } from "./avatar-cropper";
 import { InvitePanel } from "./invite-panel";
@@ -152,19 +150,14 @@ export function SettingsSheet() {
       />
       <p className="meta">Automático segue o modo do aparelho.</p>
 
-      <h4>Cômodos da casa</h4>
-      <Chips>
-        {ROOM_ORDER.filter((r) => r !== "casa").map((r) => (
-          <Chip
-            key={r}
-            pressed={s.rooms.includes(r)}
-            onClick={() => toggleRoom(r)}
-          >
-            {ROOM_NAMES[r]}
-          </Chip>
-        ))}
-      </Chips>
-      <p className="meta">Cômodos desligados somem de Hoje e das Rotinas.</p>
+      <h4>Minha casa</h4>
+      <p className="meta">
+        Cômodos, pets, modo e ritmo da casa. As rotinas se ajustam ao que você
+        escolher.
+      </p>
+      <Link href="/casa" className="btn" onClick={closeSheet}>
+        Editar minha casa
+      </Link>
 
       <h4>Método</h4>
       <button

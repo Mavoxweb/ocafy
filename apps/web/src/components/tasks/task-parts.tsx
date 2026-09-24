@@ -6,6 +6,7 @@ import { completeTask, undoToday } from "@/lib/actions";
 import { daysAgoPhrase, fmtTime } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
+  type Task,
   activeRoutine,
   derive,
   doneToday,
@@ -17,7 +18,6 @@ import {
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { openSheet } from "@/lib/ui";
-import { ROOM_NAMES, type RecurringTask, type RoutineTask } from "@ocafy/core";
 import { useState } from "react";
 
 /* ---------- checklist da rotina diária ---------- */
@@ -59,7 +59,7 @@ export function RoutineBlock({
   );
 }
 
-function ChecklistItem({ task }: { task: RoutineTask }) {
+function ChecklistItem({ task }: { task: Task }) {
   const s = useAppState();
   const now = useNow();
   const done = doneToday(s, task.id, now);
@@ -110,7 +110,7 @@ function ChecklistItem({ task }: { task: RoutineTask }) {
 }
 
 /* ---------- tile de prioridade ---------- */
-export function TaskTile({ task }: { task: RecurringTask }) {
+export function TaskTile({ task }: { task: Task }) {
   const s = useAppState();
   const now = useNow();
   const st = taskStatus(s, task, now);
@@ -126,7 +126,7 @@ export function TaskTile({ task }: { task: RecurringTask }) {
         <StatusPill state={st.state}>{statusLabel(st)}</StatusPill>
         <span className="ttl">{title}</span>
         <span className="meta">
-          {ROOM_NAMES[task.room]} · {task.mins} min
+          {task.roomLabel} · {task.mins} min
         </span>
       </button>
       <div className="tfoot">
@@ -149,7 +149,7 @@ export function TaskTile({ task }: { task: RecurringTask }) {
 }
 
 /* ---------- linha da lista de recorrentes ---------- */
-export function TaskRow({ task }: { task: RecurringTask }) {
+export function TaskRow({ task }: { task: Task }) {
   const s = useAppState();
   const now = useNow();
   const st = taskStatus(s, task, now);

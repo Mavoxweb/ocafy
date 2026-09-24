@@ -1,4 +1,4 @@
-import type { RoomId } from "@ocafy/core";
+import type { RoomIconKey } from "@/lib/selectors";
 import type { ReactNode, SVGProps } from "react";
 
 interface SvgProps extends Omit<SVGProps<SVGSVGElement>, "d"> {
@@ -70,12 +70,31 @@ export const IconStar = ({ size = 30 }: { size?: number }) => (
   </Svg>
 );
 
-const ROOM_PATHS: Record<RoomId, ReactNode> = {
-  quarto1: (
-    <path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 15h18M6 10V7h5v3M13 10V7h5v3M3 18v2M21 18v2" />
-  ),
-  quarto2: (
-    <path d="M5 18v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M5 15h14M8 10V7h5v3M5 18v2M19 18v2" />
+const BED = (
+  <path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 15h18M6 10V7h5v3M13 10V7h5v3M3 18v2M21 18v2" />
+);
+const BATH = (
+  <>
+    <path d="M3 12h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z" />
+    <path d="M6 12V6a2 2 0 0 1 3.6-1.2M7 20l-1 2M17 20l1 2" />
+  </>
+);
+const PETS = (
+  <>
+    <path d="M5 20v-8l-1-7 4 3h8l4-3-1 7v8z" />
+    <circle cx="9.5" cy="13" r=".8" fill="currentColor" />
+    <circle cx="14.5" cy="13" r=".8" fill="currentColor" />
+  </>
+);
+
+const ROOM_PATHS: Record<RoomIconKey, ReactNode> = {
+  quarto: BED,
+  banheiro: BATH,
+  lavabo: (
+    <>
+      <path d="M4 10h16v2a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z" />
+      <path d="M12 10V6a2 2 0 0 1 3.4-1.4M9 18l-1 3M15 18l1 3" />
+    </>
   ),
   sala: (
     <>
@@ -90,12 +109,6 @@ const ROOM_PATHS: Record<RoomId, ReactNode> = {
       <path d="M2 10h2M20 10h2M9 6c0-1 1-1 1-2M14 6c0-1 1-1 1-2" />
     </>
   ),
-  banheiro: (
-    <>
-      <path d="M3 12h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z" />
-      <path d="M6 12V6a2 2 0 0 1 3.6-1.2M7 20l-1 2M17 20l1 2" />
-    </>
-  ),
   servico: (
     <>
       <rect x="4" y="3" width="16" height="18" rx="3" />
@@ -103,17 +116,47 @@ const ROOM_PATHS: Record<RoomId, ReactNode> = {
       <path d="M8 6.5h.01M11 6.5h.01" />
     </>
   ),
-  gatos: (
+  varanda: (
     <>
-      <path d="M5 20v-8l-1-7 4 3h8l4-3-1 7v8z" />
-      <circle cx="9.5" cy="13" r=".8" fill="currentColor" />
-      <circle cx="14.5" cy="13" r=".8" fill="currentColor" />
+      <path d="M3 10h18M5 10v9M9 10v9M15 10v9M19 10v9M3 19h18" />
+      <path d="M4 10V6h16v4" />
     </>
   ),
+  quintal: (
+    <>
+      <path d="M12 21v-6M12 15c-4 0-6-2.5-6-6a6 6 0 0 1 12 0c0 3.5-2 6-6 6z" />
+      <path d="M7 21h10" />
+    </>
+  ),
+  garagem: (
+    <>
+      <path d="M3 11l2-5a2 2 0 0 1 1.9-1.3h10.2A2 2 0 0 1 19 6l2 5v6H3z" />
+      <path d="M3 14h18M7 17v2M17 17v2" />
+      <circle cx="7.5" cy="14" r=".8" fill="currentColor" />
+      <circle cx="16.5" cy="14" r=".8" fill="currentColor" />
+    </>
+  ),
+  escritorio: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <path d="M8 20h8M12 16v4" />
+    </>
+  ),
+  piscina: (
+    <>
+      <path d="M3 17c2 0 2 1.5 4.5 1.5S10 17 12 17s2 1.5 4.5 1.5S19 17 21 17" />
+      <path d="M3 13c2 0 2 1.5 4.5 1.5S10 13 12 13s2 1.5 4.5 1.5S19 13 21 13" />
+      <path d="M8 13V6a2 2 0 0 1 4 0M14 13V6a2 2 0 0 1 4 0" />
+    </>
+  ),
+  pets: PETS,
   casa: <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" />,
 };
 
-export function RoomIcon({ room, size = 22 }: { room: RoomId; size?: number }) {
+export function RoomIcon({
+  room,
+  size = 22,
+}: { room: RoomIconKey; size?: number }) {
   return <Svg size={size}>{ROOM_PATHS[room]}</Svg>;
 }
 
@@ -132,7 +175,7 @@ export const NAV_ICONS = {
     </>
   ),
   cozinha: ROOM_PATHS.cozinha,
-  gatos: ROOM_PATHS.gatos,
+  gatos: ROOM_PATHS.pets,
   loja: (
     <>
       <path d="M4 8h16l-1.2 11a1 1 0 0 1-1 .9H6.2a1 1 0 0 1-1-.9z" />

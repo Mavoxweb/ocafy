@@ -1,4 +1,4 @@
-import { TASK_MAP } from "@ocafy/core";
+import { resolveTask } from "@ocafy/core";
 import {
   completionReactions,
   completions,
@@ -9,6 +9,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
+import { loadPlan } from "../plan";
 import { reactionSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
@@ -62,7 +63,7 @@ export const socialRouter = router({
       z.object({ id: uuid.optional(), taskKey: z.string().min(1).max(60) }),
     )
     .mutation(async ({ ctx, input }) => {
-      if (!TASK_MAP[input.taskKey]) {
+      if (!resolveTask(await loadPlan(ctx.householdId), input.taskKey)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Tarefa desconhecida.",

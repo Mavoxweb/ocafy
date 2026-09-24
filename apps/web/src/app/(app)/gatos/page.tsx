@@ -2,7 +2,6 @@
 
 import { NumberInput, Panel } from "@/components/ui/primitives";
 import { adjustStock, completeTask, setLitter } from "@/lib/actions";
-import { TASK_MAP } from "@/lib/catalog";
 import { addDays, fmtShort } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
@@ -10,16 +9,34 @@ import {
   doneToday,
   litterBagsPerChange,
   memberName,
+  taskOf,
   taskStatus,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { daysBetween } from "@ocafy/core";
+import Link from "next/link";
+
+function NoCats() {
+  return (
+    <Panel className="mt-4">
+      <b>Nenhum gato na casa</b>
+      <p className="meta">
+        Adicione gatos em “Minha casa” para acompanhar a caixa de areia e o
+        estoque.
+      </p>
+      <Link href="/casa" className="btn">
+        Abrir Minha casa
+      </Link>
+    </Panel>
+  );
+}
 
 export default function CatsPage() {
   const s = useAppState();
   const now = useNow();
   const L = s.litter;
-  const task = TASK_MAP.area_troca;
+  const task = taskOf(s, "area_troca");
+  if (!task) return <NoCats />;
   const st = taskStatus(s, task, now);
   const bpc = litterBagsPerChange(s);
 

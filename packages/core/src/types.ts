@@ -4,7 +4,8 @@ export type TaskCategory =
   | "gatos"
   | "cozinha"
   | "organizacao"
-  | "manutencao";
+  | "manutencao"
+  | "pets";
 
 export type RoomId =
   | "quarto1"

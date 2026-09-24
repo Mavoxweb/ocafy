@@ -1,6 +1,15 @@
 "use client";
 
-import type { CompletionEntry, LitterSettings, RoomId } from "@ocafy/core";
+import {
+  type CompletionEntry,
+  DEFAULT_PROFILE,
+  type HouseProfile,
+  type LitterSettings,
+  type Pet,
+  type RoomInstance,
+  defaultRoomCounts,
+  roomsFromCounts,
+} from "@ocafy/core";
 import { useSyncExternalStore } from "react";
 import type { InventoryDest, ReactionKey } from "./catalog";
 
@@ -96,7 +105,10 @@ export interface AppState {
   meId: string | null;
   isOwner: boolean;
   invite: { code: string; expiresAt: string } | null;
-  rooms: RoomId[];
+  /** Perfil da casa + cômodos + pets = entrada do motor de rotinas (ver selectors → planOf). */
+  profile: HouseProfile;
+  rooms: RoomInstance[];
+  pets: Pet[];
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
   overrides: Record<string, TaskOverride>;
@@ -118,17 +130,6 @@ export const DEFAULT_LITTER: AppState["litter"] = {
   maxDays: 7,
 };
 
-export const ALL_ROOMS: RoomId[] = [
-  "quarto1",
-  "quarto2",
-  "sala",
-  "cozinha",
-  "banheiro",
-  "servico",
-  "gatos",
-  "casa",
-];
-
 export const EMPTY_STATE: AppState = {
   status: "loading",
   household: null,
@@ -136,7 +137,9 @@ export const EMPTY_STATE: AppState = {
   meId: null,
   isOwner: false,
   invite: null,
-  rooms: ALL_ROOMS,
+  profile: DEFAULT_PROFILE,
+  rooms: roomsFromCounts(defaultRoomCounts("apartment", "m")),
+  pets: [],
   litter: DEFAULT_LITTER,
   litterStock: null,
   overrides: {},

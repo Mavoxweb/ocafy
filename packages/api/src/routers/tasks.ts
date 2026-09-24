@@ -1,9 +1,8 @@
 import {
   OFFICE_GOALS,
-  RECURRING_TASKS,
-  TASK_MAP,
   bagsPerLitterChange,
   pointsRange,
+  resolveTask,
 } from "@ocafy/core";
 import {
   completions,
@@ -16,6 +15,7 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { z } from "zod";
+import { loadPlan } from "../plan";
 import { completeTaskSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
@@ -38,11 +38,11 @@ export const tasksRouter = router({
   complete: memberProcedure
     .input(completeTaskSchema)
     .mutation(async ({ ctx, input }) => {
-      const task = TASK_MAP[input.taskKey];
+      const task = resolveTask(await loadPlan(ctx.householdId), input.taskKey);
       if (!task)
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Tarefa desconhecida.",
+          message: "Esta tarefa não faz parte da rotina da sua casa.",
         });
 
       const at = new Date(input.at);
@@ -184,7 +184,8 @@ export const tasksRouter = router({
         ),
     )
     .mutation(async ({ ctx, input }) => {
-      if (!RECURRING_TASKS.some((t) => t.id === input.taskKey)) {
+      const task = resolveTask(await loadPlan(ctx.householdId), input.taskKey);
+      if (!task?.recurring) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Tarefa não configurável.",

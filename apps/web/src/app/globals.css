@@ -1942,3 +1942,186 @@ input[type="email"]:focus {
 input[type="range"] {
   accent-color: var(--accent-strong);
 }
+
+/* ============ Casa sob medida: onboarding e "Minha casa" ============ */
+.chips.wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+  margin: 0;
+  padding: 2px 0;
+}
+.chip.static {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  gap: 5px;
+}
+.qlabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 7px;
+}
+.mode-grid,
+.int-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.int-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 420px) {
+  .int-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  color: var(--ink);
+}
+.mode-card[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--tint);
+}
+.mode-card.soon {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.mode-card .meta {
+  margin: 0;
+  font-size: 0.76rem;
+}
+.mode-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.rgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 460px) {
+  .rgrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.rcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  text-align: center;
+}
+.rcell.on {
+  border-color: var(--accent);
+  background: var(--tint);
+}
+.rcell-ico {
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+.rcell.on .rcell-ico {
+  color: var(--accent-strong);
+}
+.rcell-name {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.rcell-nick {
+  font-size: 0.76rem;
+}
+.rcell-names {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.qty button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--soft);
+  color: var(--accent-strong);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.qty button:disabled {
+  opacity: 0.35;
+}
+.qty output {
+  min-width: 1.4ch;
+  font-weight: 800;
+  font-size: 1.1rem;
+  text-align: center;
+}
+.petcard {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+}
+.petcard-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.petcard-head input {
+  flex: 1;
+  min-width: 0;
+}
+.petcard-ico {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.diffbox {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--soft);
+  font-size: 0.86rem;
+}
+.diffbox ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.tpl-list {
+  display: grid;
+  gap: 10px;
+}
+.tpl-list .mode-card b {
+  font-size: 0.98rem;
+}
+.sticky-save {
+  position: sticky;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  margin-top: 16px;
+  padding: 10px 0;
+}

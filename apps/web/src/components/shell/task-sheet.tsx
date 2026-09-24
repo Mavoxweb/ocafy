@@ -8,7 +8,6 @@ import {
   setFrequency,
   togglePause,
 } from "@/lib/actions";
-import { TASK_MAP } from "@/lib/catalog";
 import { WEEKDAYS, addDays, dayKey, daysAgoPhrase, fromKey } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
@@ -18,19 +17,19 @@ import {
   memberName,
   partnerOf,
   statusLabel,
+  taskOf,
   taskStatus,
   taskTitle,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { closeSheet } from "@/lib/ui";
-import { ROOM_NAMES } from "@ocafy/core";
 import { useRef } from "react";
 
 export function TaskSheet({ id }: { id: string }) {
   const s = useAppState();
   const now = useNow();
   const dateRef = useRef<HTMLInputElement>(null);
-  const t = TASK_MAP[id];
+  const t = taskOf(s, id);
   if (!t) return null;
 
   const st = taskStatus(s, t, now);
@@ -42,7 +41,7 @@ export function TaskSheet({ id }: { id: string }) {
     st.state === "nunca" || !st.last || st.d == null
       ? "Ainda sem registro"
       : `Última vez ${daysAgoPhrase(st.d)}, por ${memberName(s, st.last.who)}`;
-  const how = "how" in t ? t.how : "";
+  const how = t.how;
   const pendingTrade = s.trades.some(
     (x) => x.taskId === id && x.status === "pending",
   );
@@ -64,7 +63,7 @@ export function TaskSheet({ id }: { id: string }) {
       </SheetHead>
       <h3 className="mt-2.5">{taskTitle(s, t)}</h3>
       <p className="meta">
-        {ROOM_NAMES[t.room]} · ~{t.mins} min · +{5 + t.mins} XP
+        {t.roomLabel} · ~{t.mins} min · +{5 + t.mins} XP
       </p>
       <p className="meta">{when}</p>
       {how && (

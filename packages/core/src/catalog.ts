@@ -43,7 +43,7 @@ export const ROUTINE_TASKS: RoutineTask[] = [
     room: "quarto1",
     cat: "organizacao",
     mins: 3,
-    how: "Dez minutos de ventilação pela manhã tiram a umidade da noite — no clima do Rio, é o que mais previne mofo e cheiro de guardado.",
+    how: "Dez minutos de ventilação pela manhã tiram a umidade da noite — em clima úmido, é o que mais previne mofo e cheiro de guardado.",
   },
   {
     id: "m_areia",
@@ -455,7 +455,7 @@ export const RECURRING_TASKS: RecurringTask[] = [
     min: 3,
     max: 4,
     mins: 3,
-    how: "Portas e janelas fechadas por dias criam umidade — no Rio, é o caminho do mofo nos cantos e atrás dos móveis.",
+    how: "Portas e janelas fechadas por dias criam umidade — em clima úmido, é o caminho do mofo nos cantos e atrás dos móveis.",
   },
   {
     id: "escovar_gatos",

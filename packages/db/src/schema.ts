@@ -26,6 +26,28 @@ export const households = pgTable("households", {
   name: text("name").notNull(),
   /** Sobe a cada mudança em qualquer tabela da casa (triggers): o app só baixa o snapshot se mudou. */
   rev: bigint("rev", { mode: "number" }).default(0).notNull(),
+  /** Perfil da casa (entrada do motor de rotinas). Ver @ocafy/core → HouseProfile. */
+  mode: text("mode", { enum: ["solo", "couple", "family"] })
+    .default("couple")
+    .notNull(),
+  dwelling: text("dwelling", {
+    enum: ["apartment", "house", "townhouse", "studio"],
+  })
+    .default("apartment")
+    .notNull(),
+  size: text("size", { enum: ["s", "m", "l"] })
+    .default("m")
+    .notNull(),
+  intensity: text("intensity", { enum: ["light", "standard", "full"] })
+    .default("standard")
+    .notNull(),
+  cooksAtHome: boolean("cooks_at_home").default(true).notNull(),
+  usesFrozen: boolean("uses_frozen").default(true).notNull(),
+  hasWasher: boolean("has_washer").default(true).notNull(),
+  hasPlants: boolean("has_plants").default(false).notNull(),
+  hasCar: boolean("has_car").default(false).notNull(),
+  officeProject: boolean("office_project").default(false).notNull(),
+  onboardedAt: timestamp("onboarded_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -80,8 +102,46 @@ export const rooms = pgTable(
       .references(() => households.id, { onDelete: "cascade" })
       .notNull(),
     slug: text("slug").notNull(),
+    /** Tipo do cômodo (quarto, banheiro…). Vazio em linhas antigas: deriva-se do slug. */
+    kind: text("kind").default("").notNull(),
+    /** Apelido do cômodo (null = nome padrão). */
+    label: text("label"),
+    position: integer("position").default(0).notNull(),
   },
   (t) => [uniqueIndex("rooms_household_slug_uq").on(t.householdId, t.slug)],
+);
+
+/** Pets da casa: geram tarefas próprias (passeios, banho, areia…). */
+export const pets = pgTable(
+  "pets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    species: text("species", {
+      enum: ["dog", "cat", "bird", "fish", "rodent", "reptile", "other"],
+    }).notNull(),
+    size: text("size", { enum: ["mini", "small", "medium", "large", "giant"] }),
+    coat: text("coat", { enum: ["short", "long"] }),
+    outdoorAccess: boolean("outdoor_access"),
+    litter: text("litter", { enum: ["litter", "pad", "none"] }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("pets_household_idx").on(t.householdId)],
+);
+
+/** Passos do onboarding (por conta, antes de existir casa): mede onde as pessoas desistem. */
+export const onboardingEvents = pgTable(
+  "onboarding_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    step: text("step").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("onboarding_events_user_idx").on(t.userId, t.createdAt)],
 );
 
 /** Ajustes por casa sobre o catálogo: janela de dias e pausa. */

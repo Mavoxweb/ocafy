@@ -1,38 +1,49 @@
 "use client";
 
+import {
+  HouseFields,
+  ModePicker,
+  PetsEditor,
+  PlanPreview,
+  RhythmFields,
+  RoomGrid,
+} from "@/components/casa/house-editor";
 import { Splash } from "@/components/shell/splash";
 import { OcafySymbol } from "@/components/ui/logo";
-import { Chip, Chips, Field } from "@/components/ui/primitives";
-import { createHousehold, joinHousehold } from "@/lib/actions";
+import { Field } from "@/components/ui/primitives";
+import { createHousehold, joinHousehold, trackOnboarding } from "@/lib/actions";
 import { authClient } from "@/lib/auth/client";
-import { ROOM_ORDER } from "@/lib/catalog";
-import { DEFAULT_LITTER, useAppState } from "@/lib/store";
-import { errorMessage } from "@/lib/trpc";
 import {
-  RECURRING_TASKS,
-  ROOM_NAMES,
-  ROUTINE_TASKS,
-  type RoomId,
-} from "@ocafy/core";
+  type HouseDraft,
+  draftFromTemplate,
+  initialDraft,
+} from "@/lib/house-draft";
+import { useAppState } from "@/lib/store";
+import { errorMessage } from "@/lib/trpc";
+import { HOUSE_TEMPLATES, defaultRoomCounts } from "@ocafy/core";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
-type StepId = "modo" | "casa" | "convite" | "comodos" | "gatos" | "resumo";
+type StepId =
+  | "inicio"
+  | "convite"
+  | "modelo"
+  | "nomes"
+  | "casa"
+  | "comodos"
+  | "pets"
+  | "ritmo"
+  | "previa";
 
-const NUM_FIELDS = [
-  { key: "cats", label: "Gatos", min: 1, max: 10, step: 1 },
-  { key: "boxes", label: "Caixas de areia", min: 1, max: 10, step: 1 },
-  {
-    key: "kgPerBox",
-    label: "Kg de areia por caixa",
-    min: 1,
-    max: 20,
-    step: 0.5,
-  },
-  { key: "bagKg", label: "Kg por saco", min: 1, max: 30, step: 0.5 },
-  { key: "minDays", label: "Troca: mínimo de dias", min: 1, max: 60, step: 1 },
-  { key: "maxDays", label: "Troca: máximo de dias", min: 1, max: 60, step: 1 },
-] as const;
+const STEPS: StepId[] = [
+  "modelo",
+  "nomes",
+  "casa",
+  "comodos",
+  "pets",
+  "ritmo",
+  "previa",
+];
 
 export default function OnboardingPage() {
   return (
@@ -52,19 +63,15 @@ function Onboarding() {
       ?.toUpperCase()
       .replace(/[^A-Z0-9]/g, "") ?? "";
 
-  const [step, setStep] = useState<StepId>(inviteFromLink ? "convite" : "modo");
+  const [step, setStep] = useState<StepId>(
+    inviteFromLink ? "convite" : "inicio",
+  );
+  const [draft, setDraft] = useState<HouseDraft>(initialDraft);
+  const [roomsTouched, setRoomsTouched] = useState(false);
+  const [fromTemplate, setFromTemplate] = useState(false);
   const [houseName, setHouseName] = useState("");
   const [myName, setMyName] = useState("");
   const [code, setCode] = useState(inviteFromLink);
-  const [rooms, setRooms] = useState<RoomId[]>(
-    ROOM_ORDER.filter((r) => r !== "casa"),
-  );
-  const [litter, setLitter] = useState<Record<string, string>>(
-    Object.fromEntries(
-      Object.entries(DEFAULT_LITTER).map(([k, v]) => [k, String(v)]),
-    ),
-  );
-  const [stock, setStock] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -85,53 +92,57 @@ function Onboarding() {
     });
   }, []);
 
-  const creating = step !== "modo" && step !== "convite";
-  const hasCats = rooms.includes("gatos");
-  const steps: StepId[] = hasCats
-    ? ["casa", "comodos", "gatos", "resumo"]
-    : ["casa", "comodos", "resumo"];
-  const idx = steps.indexOf(step);
+  // Mede em que passo as pessoas desistem (só depois de a sessão estar pronta).
+  const ready = s.status === "nohousehold";
+  useEffect(() => {
+    if (ready) trackOnboarding(step);
+  }, [step, ready]);
 
-  const enabled = new Set<RoomId>([...rooms, "casa"]);
-  const nRoutine = ROUTINE_TASKS.filter((t) => enabled.has(t.room)).length;
-  const nRecurring = RECURRING_TASKS.filter((t) => enabled.has(t.room)).length;
+  const patch = (fn: (d: HouseDraft) => HouseDraft) => setDraft(fn);
+  const patchRooms = (fn: (d: HouseDraft) => HouseDraft) => {
+    setRoomsTouched(true);
+    setDraft(fn);
+  };
+  const resetRooms = (
+    dwelling: HouseDraft["profile"]["dwelling"],
+    size: HouseDraft["profile"]["size"],
+  ) => {
+    if (!roomsTouched)
+      setDraft((d) => ({ ...d, counts: defaultRoomCounts(dwelling, size) }));
+  };
+
+  const creating = STEPS.includes(step);
+  const idx = STEPS.indexOf(step);
+  const nRooms = Object.values(draft.counts).reduce((a, b) => a + (b ?? 0), 0);
 
   const valid =
-    step === "casa"
+    step === "nomes"
       ? houseName.trim().length >= 2 && myName.trim().length >= 2
       : step === "convite"
         ? code.trim().length >= 4 && myName.trim().length >= 2
-        : step === "comodos"
-          ? rooms.length > 0
-          : true;
+        : step === "pets"
+          ? draft.pets.every((p) => p.name.trim().length > 0)
+          : step === "comodos"
+            ? nRooms > 0
+            : true;
 
-  const num = (k: string, d: number) => {
-    const v = Number(litter[k]);
-    return v > 0 ? v : d;
-  };
+  function pickTemplate(id: string | null) {
+    setFromTemplate(id !== null);
+    setRoomsTouched(false);
+    setDraft(id ? draftFromTemplate(id) : initialDraft());
+    setStep("nomes");
+  }
 
   async function finish() {
     setBusy(true);
     setError("");
     try {
-      const minDays = Math.round(num("minDays", 5));
       await createHousehold({
         houseName: houseName.trim(),
         memberName: myName.trim(),
-        rooms,
-        litter: {
-          cats: Math.round(num("cats", 3)),
-          boxes: Math.round(num("boxes", 2)),
-          kgPerBox: num("kgPerBox", 4),
-          bagKg: num("bagKg", 4),
-          minDays,
-          maxDays: Math.max(minDays, Math.round(num("maxDays", 7))),
-        },
-        litterStock:
-          hasCats && stock !== ""
-            ? Math.max(0, Math.round(Number(stock)))
-            : null,
+        draft,
       });
+      trackOnboarding("concluido");
       router.replace("/");
     } catch (e) {
       setError(
@@ -147,6 +158,7 @@ function Onboarding() {
     setError("");
     try {
       await joinHousehold(code.trim(), myName.trim());
+      trackOnboarding("entrou_convite");
       router.replace("/");
     } catch (e) {
       setError(
@@ -160,8 +172,14 @@ function Onboarding() {
   const next = () => {
     if (!valid || busy) return;
     if (step === "convite") void join();
-    else if (step === "resumo") void finish();
-    else setStep(steps[idx + 1]);
+    else if (step === "previa") void finish();
+    else if (creating) setStep(STEPS[idx + 1]);
+  };
+
+  const back = () => {
+    setError("");
+    if (step === "convite" || step === "modelo") setStep("inicio");
+    else if (creating) setStep(STEPS[idx - 1]);
   };
 
   if (s.status === "loading" || s.status === "ready" || s.status === "anon") {
@@ -169,7 +187,7 @@ function Onboarding() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-[520px] flex-col justify-center px-4 py-8">
+    <main className="mx-auto flex min-h-screen max-w-[560px] flex-col justify-center px-4 py-8">
       <div className="mb-6 flex flex-col items-center text-center">
         <OcafySymbol size={72} />
         <div className="owm mt-2.5" style={{ fontSize: 38 }}>
@@ -181,10 +199,10 @@ function Onboarding() {
       {creating && (
         <>
           <p className="sr-only">
-            Etapa {idx + 1} de {steps.length}
+            Etapa {idx + 1} de {STEPS.length}
           </p>
           <div className="mb-3 flex justify-center gap-1.5" aria-hidden="true">
-            {steps.map((st, i) => (
+            {STEPS.map((st, i) => (
               <span
                 key={st}
                 className="h-1.5 rounded-pill transition-all"
@@ -206,7 +224,7 @@ function Onboarding() {
           next();
         }}
       >
-        {step === "modo" && (
+        {step === "inicio" && (
           <>
             <h1 className="text-[1.5rem]">Bem-vindo(a)!</h1>
             <p className="meta">
@@ -217,7 +235,7 @@ function Onboarding() {
                 type="button"
                 className="btn btn-primary btn-block"
                 style={{ margin: 0 }}
-                onClick={() => setStep("casa")}
+                onClick={() => setStep("modelo")}
               >
                 Criar uma casa
               </button>
@@ -263,10 +281,41 @@ function Onboarding() {
           </>
         )}
 
-        {step === "casa" && (
+        {step === "modelo" && (
           <>
-            <h1 className="text-[1.5rem]">Vamos montar a casa</h1>
-            <p className="meta">Dois nomes e a rotina já nasce pronta.</p>
+            <h1 className="text-[1.5rem]">Como é a sua casa?</h1>
+            <p className="meta">
+              Escolha um modelo pronto para começar rápido — você ajusta tudo
+              nos próximos passos.
+            </p>
+            <div className="tpl-list mt-3.5">
+              {HOUSE_TEMPLATES.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="mode-card"
+                  onClick={() => pickTemplate(t.id)}
+                >
+                  <b>{t.name}</b>
+                  <span className="meta">{t.hint}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                className="mode-card"
+                onClick={() => pickTemplate(null)}
+              >
+                <b>Montar do zero</b>
+                <span className="meta">Escolho cômodos, pets e ritmo</span>
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "nomes" && (
+          <>
+            <h1 className="text-[1.5rem]">Quem mora aí?</h1>
+            <p className="meta">Dois nomes e a rotina já começa a se montar.</p>
             <div className="mt-3 grid gap-3">
               <Field label="Nome da casa">
                 <input
@@ -285,11 +334,31 @@ function Onboarding() {
                   onChange={(e) => setMyName(e.target.value)}
                 />
               </Field>
+              <ModePicker draft={draft} patch={patch} />
             </div>
-            <p className="meta mt-3">
-              A outra pessoa entra depois, com a própria conta, por um código de
-              convite — cada uma usa o seu aparelho.
+            {draft.profile.mode === "couple" && (
+              <p className="meta mt-3">
+                A outra pessoa entra depois, com a própria conta, por um código
+                de convite — cada uma usa o seu aparelho.
+              </p>
+            )}
+          </>
+        )}
+
+        {step === "casa" && (
+          <>
+            <h1 className="text-[1.5rem]">Onde vocês moram?</h1>
+            <p className="meta">
+              Casa e apartamento têm tarefas diferentes (quintal, calçada, caixa
+              d’água…).
             </p>
+            <div className="mt-3.5">
+              <HouseFields
+                draft={draft}
+                patch={patch}
+                onResetRooms={resetRooms}
+              />
+            </div>
           </>
         )}
 
@@ -297,27 +366,11 @@ function Onboarding() {
           <>
             <h1 className="text-[1.5rem]">Quais cômodos existem?</h1>
             <p className="meta">
-              Só entram na rotina os cômodos marcados. Dá para mudar depois nos
-              Ajustes.
+              Use − e + para dizer quantos de cada. Cada banheiro e cada quarto
+              ganha as suas próprias tarefas.
             </p>
             <div className="mt-3.5">
-              <Chips>
-                {ROOM_ORDER.filter((r) => r !== "casa").map((r) => (
-                  <Chip
-                    key={r}
-                    pressed={rooms.includes(r)}
-                    onClick={() =>
-                      setRooms((cur) =>
-                        cur.includes(r)
-                          ? cur.filter((x) => x !== r)
-                          : [...cur, r],
-                      )
-                    }
-                  >
-                    {ROOM_NAMES[r]}
-                  </Chip>
-                ))}
-              </Chips>
+              <RoomGrid draft={draft} patch={patchRooms} />
             </div>
             <p className="meta mt-3">
               “Casa toda” (lixo, aspirar, organização…) sempre entra.
@@ -325,74 +378,48 @@ function Onboarding() {
           </>
         )}
 
-        {step === "gatos" && (
+        {step === "pets" && (
           <>
-            <h1 className="text-[1.5rem]">Gatos e caixa de areia</h1>
+            <h1 className="text-[1.5rem]">Tem pets?</h1>
             <p className="meta">
-              Usado para calcular a troca de areia e o estoque de sacos.
+              Cães, gatos e outros bichos geram tarefas próprias: passeio,
+              banho, areia, vacinas…
             </p>
-            <div className="grid2 mt-3">
-              {NUM_FIELDS.map((f) => (
-                <Field key={f.key} label={f.label}>
-                  <input
-                    type="number"
-                    min={f.min}
-                    max={f.max}
-                    step={f.step}
-                    inputMode="decimal"
-                    value={litter[f.key]}
-                    onChange={(e) =>
-                      setLitter({ ...litter, [f.key]: e.target.value })
-                    }
-                  />
-                </Field>
-              ))}
-            </div>
-            <div className="mt-3">
-              <Field label="Sacos de areia em casa (opcional)">
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  placeholder="Ex.: 10"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
-                />
-              </Field>
+            <div className="mt-3.5">
+              <PetsEditor draft={draft} patch={patch} />
             </div>
           </>
         )}
 
-        {step === "resumo" && (
+        {step === "ritmo" && (
+          <>
+            <h1 className="text-[1.5rem]">Qual o ritmo da casa?</h1>
+            <p className="meta">
+              Isso ajusta quantas tarefas aparecem e o tamanho das janelas de
+              dias.
+            </p>
+            <div className="mt-3.5">
+              <RhythmFields draft={draft} patch={patch} />
+            </div>
+          </>
+        )}
+
+        {step === "previa" && (
           <>
             <h1 className="text-[1.5rem]">
               Tudo pronto, {myName.trim() || "você"}!
             </h1>
             <p className="meta">
-              Isto é o que vai ser criado para {houseName.trim()}:
+              Esta é a rotina que o Ocafy montou para {houseName.trim()}:
             </p>
-            <div className="stats mt-3">
-              <div className="stat">
-                <div className="v">{nRoutine}</div>
-                <div className="k">rotinas diárias (manhã e noite)</div>
-              </div>
-              <div className="stat">
-                <div className="v">{nRecurring}</div>
-                <div className="k">tarefas recorrentes com janela de dias</div>
-              </div>
-              <div className="stat">
-                <div className="v">{rooms.length + 1}</div>
-                <div className="k">cômodos acompanhados</div>
-              </div>
-              <div className="stat">
-                <div className="v">6</div>
-                <div className="k">prêmios iniciais na lojinha</div>
-              </div>
+            <div className="mt-3.5">
+              <PlanPreview draft={draft} />
             </div>
             <p className="meta mt-3">
               Ao começar, tudo está “sem registro”: informe quando cada coisa
               foi feita pela última vez em Rotinas para o método calcular os
-              prazos. Depois, convide a outra pessoa pela tela inicial.
+              prazos. Você muda cômodos, pets e ritmo quando quiser em Ajustes →
+              Minha casa.
             </p>
           </>
         )}
@@ -403,34 +430,37 @@ function Onboarding() {
           </p>
         )}
 
-        {step !== "modo" && (
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setError("");
-                setStep(
-                  step === "convite" || step === "casa"
-                    ? "modo"
-                    : steps[idx - 1],
-                );
-              }}
-            >
+        {step !== "inicio" && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <button type="button" className="btn" onClick={back}>
               Voltar
             </button>
+            {step !== "modelo" && (
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!valid || busy}
+              >
+                {busy
+                  ? "Aguarde…"
+                  : step === "previa"
+                    ? "Começar"
+                    : step === "convite"
+                      ? "Entrar na casa"
+                      : "Continuar"}
+              </button>
+            )}
+          </div>
+        )}
+        {fromTemplate && creating && step !== "previa" && step !== "modelo" && (
+          <div className="mt-3 text-center">
             <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!valid || busy}
+              type="button"
+              className="link"
+              disabled={houseName.trim().length < 2 || myName.trim().length < 2}
+              onClick={() => setStep("previa")}
             >
-              {busy
-                ? "Aguarde…"
-                : step === "resumo"
-                  ? "Começar"
-                  : step === "convite"
-                    ? "Entrar na casa"
-                    : "Continuar"}
+              Pular para o resumo
             </button>
           </div>
         )}

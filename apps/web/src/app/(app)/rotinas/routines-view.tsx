@@ -8,11 +8,15 @@ import {
   Legend,
   Segmented,
 } from "@/components/ui/primitives";
-import { ROOM_ORDER } from "@/lib/catalog";
 import { WEEKDAYS, capitalize } from "@/lib/dates";
-import { isOff, minMax, recurringInHouse } from "@/lib/selectors";
+import {
+  type Task,
+  isOff,
+  minMax,
+  recurringInHouse,
+  roomGroups,
+} from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
-import { ROOM_NAMES, type RecurringTask, type RoomId } from "@ocafy/core";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -30,18 +34,18 @@ export function RoutinesView() {
   const router = useRouter();
   const params = useSearchParams();
   const roomParam = params.get("room");
-  const room: RoomId | null = ROOM_ORDER.includes(roomParam as RoomId)
-    ? (roomParam as RoomId)
+  const rooms = roomGroups(s);
+  const room: string | null = rooms.some((r) => r.slug === roomParam)
+    ? roomParam
     : null;
   const [view, setView] = useState<"lista" | "semana">("lista");
 
-  const setRoom = (r: RoomId | null) =>
+  const setRoom = (r: string | null) =>
     router.replace(r ? `/rotinas?room=${r}` : "/rotinas", { scroll: false });
 
   const pool = recurringInHouse(s).filter((t) => !room || t.room === room);
   const on = pool.filter((t) => !isOff(s, t));
   const off = pool.filter((t) => isOff(s, t));
-  const rooms = ROOM_ORDER.filter((r) => s.rooms.includes(r));
 
   return (
     <>
@@ -51,8 +55,12 @@ export function RoutinesView() {
             Tudo
           </Chip>
           {rooms.map((r) => (
-            <Chip key={r} pressed={room === r} onClick={() => setRoom(r)}>
-              {ROOM_NAMES[r]}
+            <Chip
+              key={r.slug}
+              pressed={room === r.slug}
+              onClick={() => setRoom(r.slug)}
+            >
+              {r.label}
             </Chip>
           ))}
         </Chips>
@@ -118,7 +126,7 @@ export function RoutinesView() {
   );
 }
 
-function WeekPlan({ on }: { on: RecurringTask[] }) {
+function WeekPlan({ on }: { on: Task[] }) {
   const fixed = (d: number) => on.filter((t) => t.day === d);
   const floating = on.filter((t) => t.day == null);
   return (

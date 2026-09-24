@@ -4,11 +4,10 @@ import {
   type LevelInfo,
   type Meal,
   PROTEIN_MAP,
-  RECURRING_TASKS,
-  ROUTINE_TASKS,
-  type RecurringTask,
-  type RoomId,
-  type RoutineTask,
+  PSEUDO_TASKS,
+  type PlannedTask,
+  ROOM_NAMES,
+  type RoomKind,
   type TaskStatusState,
   bagsPerLitterChange,
   calculateDefrostAlert,
@@ -18,9 +17,12 @@ import {
   calculateWeeklyGoalProgress,
   computeCoins,
   daysBetween,
+  generatePlan,
   getMealTime,
+  parseTaskKey,
+  templateOfKey,
 } from "@ocafy/core";
-import { type AnyTask, OFFICE_GOALS, TASK_MAP } from "./catalog";
+import { OFFICE_GOALS } from "./catalog";
 import { addDays, dayKey, fmtTime, fromKey, mondayKey, relDay } from "./dates";
 import type { AppState, MealRecord, Member } from "./store";
 
@@ -76,32 +78,127 @@ export const memberBySlot = (s: AppState, slot: "a" | "b") =>
 
 /* ================= tarefas ================= */
 
-export function taskTitle(s: AppState, t: AnyTask): string {
+/** Tarefa da casa (do plano) ou gerada por ações do app (descongelar, cozinhar, escritório). */
+export type Task = PlannedTask;
+
+export interface Plan {
+  list: PlannedTask[];
+  map: Map<string, PlannedTask>;
+  routine: PlannedTask[];
+  recurring: PlannedTask[];
+}
+
+const planCache = new WeakMap<AppState, Plan>();
+let lastPlanKey = "";
+let lastPlan: Plan | null = null;
+
+/**
+ * Plano de tarefas da casa: o mesmo cálculo do servidor (motor de rotinas do core) a partir do
+ * perfil, cômodos e pets. Em cache por estado e reaproveitado enquanto a entrada não muda.
+ */
+export function planOf(s: AppState): Plan {
+  const hit = planCache.get(s);
+  if (hit) return hit;
+  const key = JSON.stringify([s.profile, s.rooms, s.pets]);
+  if (!lastPlan || key !== lastPlanKey) {
+    const list = generatePlan({
+      profile: s.profile,
+      rooms: s.rooms,
+      pets: s.pets,
+    });
+    lastPlan = {
+      list,
+      map: new Map(list.map((t) => [t.id, t])),
+      routine: list.filter((t) => t.kind === "routine"),
+      recurring: list.filter((t) => t.kind === "recurring"),
+    };
+    lastPlanKey = key;
+  }
+  planCache.set(s, lastPlan);
+  return lastPlan;
+}
+
+const PSEUDO = new Map<string, Task>(
+  PSEUDO_TASKS.map((p) => [
+    p.id,
+    {
+      id: p.id,
+      templateId: p.id,
+      kind: "routine",
+      t: p.t,
+      room: p.room,
+      roomLabel: ROOM_NAMES[p.room],
+      cat: p.cat,
+      mins: p.mins,
+      min: 1,
+      max: 1,
+      how: "",
+      level: "core",
+    },
+  ]),
+);
+
+/** Tarefa que já não está no plano (ex.: o pet saiu), mas continua no histórico. */
+function orphanTask(id: string): Task | undefined {
+  const tpl = templateOfKey(id);
+  if (!tpl) return undefined;
+  return {
+    id,
+    templateId: tpl.id,
+    kind: tpl.kind,
+    ...(tpl.block ? { r: tpl.block } : {}),
+    t: tpl.title
+      .replace(/\{(pet|room)\}/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/\s+—\s*$/, "")
+      .trim(),
+    room: "casa",
+    roomLabel: "Casa toda",
+    cat: tpl.cat,
+    mins: tpl.mins,
+    min: tpl.min,
+    max: tpl.max,
+    how: tpl.how,
+    level: tpl.level,
+  };
+}
+
+export const taskOf = (s: AppState, id: string): Task | undefined =>
+  planOf(s).map.get(id) ?? PSEUDO.get(id) ?? orphanTask(id);
+
+/** Quantas vezes um modelo de tarefa foi feito (somando todos os cômodos/pets). */
+export const templateCount = (s: AppState, templateId: string): number =>
+  derive(s).entries.filter(
+    (e) => parseTaskKey(e.taskId).templateId === templateId,
+  ).length;
+
+export const hasPetOf = (s: AppState, species: string) =>
+  s.pets.some((p) => p.species === species);
+
+export function taskTitle(s: AppState, t: Task): string {
   const a = memberBySlot(s, "a")?.name ?? "Pessoa 1";
   const b = memberBySlot(s, "b")?.name ?? "parceiro(a)";
   return t.t.replace("{A}", a).replace("{B}", b);
 }
 
-export const isRecurring = (t: AnyTask): t is RecurringTask => "min" in t;
-export const isRoutine = (t: AnyTask): t is RoutineTask => "r" in t;
+export const isRecurring = (t: Task) => t.kind === "recurring";
+export const isRoutine = (t: Task) => t.kind === "routine" && !!t.r;
 
-export function minMax(s: AppState, t: AnyTask): [number, number] {
+export function minMax(s: AppState, t: Task): [number, number] {
   if (t.id === "area_troca") return [s.litter.minDays, s.litter.maxDays];
   if (!isRecurring(t)) return [1, 1];
   const o = s.overrides[t.id] ?? {};
   return [o.min ?? t.min, o.max ?? t.max];
 }
 
-export const isOff = (s: AppState, t: AnyTask) => !!s.overrides[t.id]?.off;
+export const isOff = (s: AppState, t: Task) => !!s.overrides[t.id]?.off;
 
-export const activeRoutine = (s: AppState): RoutineTask[] =>
-  ROUTINE_TASKS.filter((t) => s.rooms.includes(t.room));
+export const activeRoutine = (s: AppState): Task[] => planOf(s).routine;
 
-/** Recorrentes dos cômodos da casa (inclui pausadas). */
-export const recurringInHouse = (s: AppState): RecurringTask[] =>
-  RECURRING_TASKS.filter((t) => s.rooms.includes(t.room));
+/** Recorrentes da casa (inclui pausadas). */
+export const recurringInHouse = (s: AppState): Task[] => planOf(s).recurring;
 
-export const activeRecurring = (s: AppState): RecurringTask[] =>
+export const activeRecurring = (s: AppState): Task[] =>
   recurringInHouse(s).filter((t) => !isOff(s, t));
 
 export interface TaskStat {
@@ -112,7 +209,7 @@ export interface TaskStat {
   last: CompletionEntry | null;
 }
 
-export function taskStatus(s: AppState, t: AnyTask, now: Date): TaskStat {
+export function taskStatus(s: AppState, t: Task, now: Date): TaskStat {
   const [mn, mx] = minMax(s, t);
   const last = derive(s).lastByTask.get(t.id) ?? null;
   const st = calculateTaskStatus(mn, mx, last?.at ?? null, now);
@@ -139,7 +236,7 @@ export function statusLabel(st: TaskStat): string {
 /** XP de uma tarefa registrada agora (`backdated` = registro de outro dia, sem bônus). */
 export function pointsFor(
   s: AppState,
-  t: AnyTask,
+  t: Task,
   now: Date,
   backdated: boolean,
 ): { pts: number; bonus: boolean } {
@@ -167,7 +264,7 @@ export interface RoomSummary {
   total: number;
 }
 
-export function roomSummary(s: AppState, room: RoomId, now: Date): RoomSummary {
+export function roomSummary(s: AppState, room: string, now: Date): RoomSummary {
   const ts = activeRecurring(s).filter((t) => t.room === room);
   const sts = ts.map((t) => taskStatus(s, t, now).state);
   const ok = sts.filter((x) => x === "ok").length;
@@ -193,6 +290,26 @@ export function houseHealth(s: AppState, now: Date): number {
   return sts.length
     ? Math.round((sts.filter((x) => x !== "late").length / sts.length) * 100)
     : 0;
+}
+
+export type RoomIconKey = RoomKind | "casa" | "pets";
+
+export interface RoomGroup {
+  slug: string;
+  label: string;
+  icon: RoomIconKey;
+}
+
+/** Cômodos (e "Casa toda"/"Pets") que têm tarefas no plano, na ordem de exibição. */
+export function roomGroups(s: AppState): RoomGroup[] {
+  const used = new Set(planOf(s).list.map((t) => t.room));
+  const out: RoomGroup[] = s.rooms
+    .filter((r) => used.has(r.slug))
+    .map((r) => ({ slug: r.slug, label: r.label, icon: r.kind }));
+  if (used.has("casa"))
+    out.push({ slug: "casa", label: "Casa toda", icon: "casa" });
+  if (used.has("pets")) out.push({ slug: "pets", label: "Pets", icon: "pets" });
+  return out;
 }
 
 /* ================= refeições ================= */
@@ -294,7 +411,7 @@ export const weeklyGoal = (s: AppState, now: Date) =>
 
 export function achievements(s: AppState, now: Date): Achievement[] {
   const { entries, dayMap } = derive(s);
-  const count = (id: string) => entries.filter((e) => e.taskId === id).length;
+  const count = (id: string) => templateCount(s, id);
   const sk = streaks(s, now);
   const routine = activeRoutine(s);
   const nights = new Set(
@@ -482,5 +599,3 @@ export function officeStatus(
 }
 
 /* ================= social ================= */
-
-export const taskOf = (id: string): AnyTask | undefined => TASK_MAP[id];

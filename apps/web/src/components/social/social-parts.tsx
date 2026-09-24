@@ -3,12 +3,7 @@
 import { AvatarFace } from "@/components/ui/avatar";
 import { Bar, Group, Panel } from "@/components/ui/primitives";
 import { removeCompletion, toggleReaction } from "@/lib/actions";
-import {
-  CATEGORY_NAMES,
-  REACTIONS,
-  type ReactionKey,
-  TASK_MAP,
-} from "@/lib/catalog";
+import { CATEGORY_NAMES, REACTIONS, type ReactionKey } from "@/lib/catalog";
 import {
   addDays,
   capitalize,
@@ -30,6 +25,7 @@ import {
   memberBySlot,
   ptsSince,
   streaks,
+  taskOf,
   taskStatus,
   taskTitle,
   weeklyGoal,
@@ -171,7 +167,7 @@ export function Feed() {
       {items.length ? (
         <Group>
           {items.map((e) => {
-            const t = TASK_MAP[e.taskId];
+            const t = taskOf(s, e.taskId);
             const who = memberById(s, e.who);
             const mine = s.reactions.filter((r) => r.completionId === e.id);
             return (
@@ -273,7 +269,7 @@ export function Report({ days }: { days: 7 | 30 }) {
   };
   const byCat: Record<string, { a: number; b: number }> = {};
   for (const e of es) {
-    const t = TASK_MAP[e.taskId];
+    const t = taskOf(s, e.taskId);
     const slot = memberById(s, e.who)?.slot;
     if (!t || !slot) continue;
     tot[slot].n++;
@@ -437,7 +433,7 @@ export function EntryLog() {
   return (
     <Group>
       {entries.map((e) => {
-        const t = TASK_MAP[e.taskId];
+        const t = taskOf(s, e.taskId);
         const header =
           e.dateKey !== lastDay
             ? capitalize(relDay(fromKey(e.dateKey), now))

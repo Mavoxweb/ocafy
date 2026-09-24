@@ -1,6 +1,8 @@
 "use client";
 
 import { NAV_ICONS, type NavIconKey, Svg } from "@/components/ui/icons";
+import { hasPetOf } from "@/lib/selectors";
+import { useAppState } from "@/lib/store";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -15,10 +17,13 @@ const NAV: { href: string; key: NavIconKey; label: string }[] = [
 
 export function BottomNav() {
   const path = usePathname();
+  const s = useAppState();
+  const cats = hasPetOf(s, "cat");
+  const nav = NAV.filter((n) => n.href !== "/gatos" || cats);
   return (
     <nav className="tabs-nav" aria-label="Navegação principal">
       <div className="in">
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <Link
             key={n.href}
             href={n.href}

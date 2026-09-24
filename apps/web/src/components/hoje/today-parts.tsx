@@ -5,10 +5,11 @@ import { AvatarFace } from "@/components/ui/avatar";
 import { IconFlame, RoomIcon } from "@/components/ui/icons";
 import { Group } from "@/components/ui/primitives";
 import { completeTask, pullMeal, respondTrade } from "@/lib/actions";
-import { OFFICE_GOALS, ROOM_ORDER, SLOT_INFO, TASK_MAP } from "@/lib/catalog";
+import { OFFICE_GOALS, SLOT_INFO } from "@/lib/catalog";
 import { dayKey, fromKey, relDay } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
+  type RoomGroup,
   activeRecurring,
   activeRoutine,
   currentMember,
@@ -24,14 +25,15 @@ import {
   officeWeek,
   proteinName,
   ptsSince,
+  roomGroups,
   roomSummary,
   streaks,
+  taskOf,
   taskStatus,
   taskTitle,
   xpOf,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
-import { ROOM_NAMES, type RoomId } from "@ocafy/core";
 import Link from "next/link";
 
 /* ---------- herói: anel de progresso da rotina ---------- */
@@ -113,13 +115,13 @@ export function OfficeShortcut() {
   const s = useAppState();
   const now = useNow();
   const cur = officeCurrent(s);
-  if (!cur || !s.rooms.includes("quarto2")) return null;
+  if (!cur || !s.profile.officeProject) return null;
   const week = officeWeek(s, now);
 
   return (
     <Link href="/escritorio" className="projc">
       <span className="ricon pc">
-        <RoomIcon room="quarto2" />
+        <RoomIcon room="escritorio" />
       </span>
       <span>
         <span className="meta">
@@ -147,7 +149,7 @@ export function RoomsCarousel() {
   const s = useAppState();
   const now = useNow();
   const hp = houseHealth(s, now);
-  const rooms = ROOM_ORDER.filter((r) => s.rooms.includes(r));
+  const groups = roomGroups(s);
 
   return (
     <>
@@ -155,59 +157,64 @@ export function RoomsCarousel() {
         Cômodos<small>casa {hp}% em dia</small>
       </h2>
       <div className="rooms">
-        {rooms.map((r) => (
-          <RoomCard key={r} room={r} />
+        {s.profile.officeProject && <OfficeCard />}
+        {groups.map((g) => (
+          <RoomCard key={g.slug} group={g} />
         ))}
       </div>
     </>
   );
 }
 
-function RoomCard({ room }: { room: RoomId }) {
+function OfficeCard() {
   const s = useAppState();
   const now = useNow();
-
-  if (room === "quarto2") {
-    const n = officeDoneCount(s);
-    const st = officeStatus(s, now);
-    const cls = st.cls === "late" ? "late" : st.cls === "ok" ? "ok" : "due";
-    return (
-      <Link href="/escritorio" className={`rcard st-${cls}`}>
-        <span className="rtop">
-          <span className="rname">{ROOM_NAMES[room]}</span>
-          <span className="ricon">
-            <RoomIcon room={room} />
-          </span>
-        </span>
-        <span className="rbot">
-          <span>
-            <span className="rbig">
-              {n}
-              <small>/{OFFICE_GOALS.length}</small>
-            </span>
-            <span className="rsub">objetivos do escritório</span>
-          </span>
-          <span className="rpill">
-            <i className={`dot d-${st.cls}`} />
-            {st.text}
-          </span>
-        </span>
-        <span className="rprog">
-          <i
-            style={{ width: `${Math.round((n / OFFICE_GOALS.length) * 100)}%` }}
-          />
-        </span>
-      </Link>
-    );
-  }
-
-  const sum = roomSummary(s, room, now);
+  const n = officeDoneCount(s);
+  const st = officeStatus(s, now);
+  const cls = st.cls === "late" ? "late" : st.cls === "ok" ? "ok" : "due";
   return (
-    <Link href={`/rotinas?room=${room}`} className={`rcard st-${sum.cls}`}>
+    <Link href="/escritorio" className={`rcard st-${cls}`}>
       <span className="rtop">
-        <span className="rname">{ROOM_NAMES[room]}</span>
+        <span className="rname">Escritório</span>
         <span className="ricon">
-          <RoomIcon room={room} />
+          <RoomIcon room="escritorio" />
+        </span>
+      </span>
+      <span className="rbot">
+        <span>
+          <span className="rbig">
+            {n}
+            <small>/{OFFICE_GOALS.length}</small>
+          </span>
+          <span className="rsub">objetivos do escritório</span>
+        </span>
+        <span className="rpill">
+          <i className={`dot d-${st.cls}`} />
+          {st.text}
+        </span>
+      </span>
+      <span className="rprog">
+        <i
+          style={{ width: `${Math.round((n / OFFICE_GOALS.length) * 100)}%` }}
+        />
+      </span>
+    </Link>
+  );
+}
+
+function RoomCard({ group }: { group: RoomGroup }) {
+  const s = useAppState();
+  const now = useNow();
+  const sum = roomSummary(s, group.slug, now);
+  return (
+    <Link
+      href={`/rotinas?room=${group.slug}`}
+      className={`rcard st-${sum.cls}`}
+    >
+      <span className="rtop">
+        <span className="rname">{group.label}</span>
+        <span className="ricon">
+          <RoomIcon room={group.icon} />
         </span>
       </span>
       <span className="rbot">
@@ -306,7 +313,7 @@ export function TradeInbox() {
       <h2>Combinados com a dupla</h2>
       <Group>
         {incoming.map((t) => {
-          const task = TASK_MAP[t.taskId];
+          const task = taskOf(s, t.taskId);
           if (!task) return null;
           return (
             <div key={t.id} className="logrow">
@@ -336,7 +343,7 @@ export function TradeInbox() {
           );
         })}
         {open.map((t) => {
-          const task = TASK_MAP[t.taskId];
+          const task = taskOf(s, t.taskId);
           if (!task) return null;
           return (
             <div key={t.id} className="logrow">

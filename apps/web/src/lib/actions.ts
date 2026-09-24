@@ -1,15 +1,15 @@
 "use client";
 
-import type { CompletionEntry, RoomId } from "@ocafy/core";
+import type { CompletionEntry } from "@ocafy/core";
 import {
   INVENTORY_DEST,
   type InventoryDest,
   OFFICE_GOALS,
   type ReactionKey,
-  TASK_MAP,
 } from "./catalog";
 import { dayKey, fmtTime, mondayKey, relDay, uid } from "./dates";
 import { banner, confetti, floatXP, vibrate } from "./fx";
+import { type HouseDraft, draftToInput } from "./house-draft";
 import {
   achievements,
   blockDone,
@@ -25,6 +25,7 @@ import {
   partnerOf,
   pointsFor,
   proteinName,
+  taskOf,
   taskTitle,
   xpOf,
 } from "./selectors";
@@ -45,15 +46,32 @@ const get = () => store.getState();
 export interface SetupInput {
   houseName: string;
   memberName: string;
-  rooms: RoomId[];
-  litter: AppState["litter"];
-  litterStock: number | null;
+  draft: HouseDraft;
 }
 
 /** Lança em caso de erro (a tela de onboarding mostra a mensagem). */
 export async function createHousehold(input: SetupInput) {
-  await mutateStrict(() => trpc.household.create.mutate(input));
+  await mutateStrict(() =>
+    trpc.household.create.mutate({
+      houseName: input.houseName,
+      memberName: input.memberName,
+      ...draftToInput(input.draft),
+    }),
+  );
   await refresh({ force: true });
+}
+
+/** Salva perfil, cômodos e pets ("Minha casa"). Lança em caso de erro. */
+export async function saveHouseProfile(draft: HouseDraft) {
+  await mutateStrict(() =>
+    trpc.household.updateProfile.mutate(draftToInput(draft)),
+  );
+  await refresh({ force: true });
+}
+
+/** Mede em que passo do onboarding as pessoas desistem. Nunca atrapalha o fluxo. */
+export function trackOnboarding(step: string) {
+  void trpc.household.onboardingStep.mutate({ step }).catch(() => {});
 }
 
 export async function joinHousehold(code: string, memberName: string) {
@@ -90,7 +108,7 @@ export function completeTask(
   opts: CompleteOptions = {},
 ): CompletionEntry | undefined {
   const s0 = get();
-  const t = TASK_MAP[taskId];
+  const t = taskOf(s0, taskId);
   const me = currentMember(s0);
   if (!t || !me) return;
 
@@ -263,16 +281,6 @@ export function removeMyAvatar() {
     ),
   }));
   void mutate(() => trpc.household.removeAvatar.mutate());
-}
-
-export function toggleRoom(room: RoomId) {
-  if (room === "casa") return;
-  const cur = get().rooms;
-  const next = cur.includes(room)
-    ? cur.filter((r) => r !== room)
-    : [...cur, room];
-  store.set((s) => ({ ...s, rooms: next }));
-  void mutate(() => trpc.household.setRooms.mutate({ rooms: next }));
 }
 
 /* ================= gatos ================= */
@@ -542,7 +550,7 @@ export function requestTrade(taskId: string) {
   const s = get();
   const me = currentMember(s);
   const other = partnerOf(s, me?.id);
-  const t = TASK_MAP[taskId];
+  const t = taskOf(s, taskId);
   if (!me || !t) return;
   if (!other) {
     toast("Convide a outra pessoa para pedir ajuda.");

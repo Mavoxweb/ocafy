@@ -1,4 +1,4 @@
-import type { RoomId, TaskCategory } from "@ocafy/core";
+import type { TaskCategory } from "@ocafy/core";
 
 // Catálogo compartilhado (web, mobile e API) vive no @ocafy/core.
 export {
@@ -7,30 +7,19 @@ export {
   OFFICE_GOAL_XP,
   PSEUDO_TASKS,
   REACTIONS,
-  TASK_MAP,
   XP_PER_COIN,
 } from "@ocafy/core";
-export type { AnyTask, OfficeGoal, PseudoTask, ReactionKey } from "@ocafy/core";
+export type { OfficeGoal, PseudoTask, ReactionKey } from "@ocafy/core";
 
 export const CATEGORY_NAMES: Record<TaskCategory, string> = {
   limpeza: "Limpeza",
   roupa: "Roupas",
   gatos: "Gatos",
+  pets: "Pets",
   cozinha: "Cozinha",
   organizacao: "Organização",
   manutencao: "Manutenção",
 };
-
-export const ROOM_ORDER: RoomId[] = [
-  "quarto1",
-  "quarto2",
-  "sala",
-  "cozinha",
-  "banheiro",
-  "servico",
-  "gatos",
-  "casa",
-];
 
 export const SLOT_INFO = {
   almoco: { name: "Almoço", label: "Almoço (12h)" },
