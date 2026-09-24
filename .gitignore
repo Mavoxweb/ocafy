@@ -1,4 +1,14 @@
 .DS_Store
 node_modules/
 .env
+.env.local
 *.log
+.next/
+dist/
+.expo/
+.turbo/
+coverage/
+
+*.tsbuildinfo
+package-lock.json
+next-env.d.ts

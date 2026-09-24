@@ -29,6 +29,16 @@ Abra o `index.html` no navegador ou sirva a pasta:
 npx serve .
 ```
 
+## App web (Next.js)
+
+```bash
+pnpm install
+pnpm --filter @ocafy/web dev      # http://localhost:3000
+pnpm --filter @ocafy/web build
+```
+
+O protótipo `index.html` continua como referência visual. Telas do app: onboarding, Hoje, Rotinas, Cozinha, Gatos, Lojinha, Placar (feed social e conquistas) e Projeto Escritório.
+
 ## Marca
 
 | Arquivo | Uso |
@@ -44,4 +54,5 @@ Cores: Rosa Ocafy `#FFB7C5` · Rosa Profundo `#C24B68` · Menta `#D5F3D8` · Ver
 
 - [ ] Autenticação e banco próprio (Supabase ou Firebase)
 - [ ] PWA instalável com notificações push (alertas do congelador e da rotina)
-- [ ] Migração para Next.js mantendo a lógica atual
+- [x] Migração para Next.js mantendo a lógica atual (`apps/web`, Fase 4)
+- [ ] Trocar o armazenamento local do `apps/web` (`src/lib/store.ts`) pelo tRPC/Neon (`@ocafy/api`)
