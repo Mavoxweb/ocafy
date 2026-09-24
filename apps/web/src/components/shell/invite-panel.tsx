@@ -3,6 +3,7 @@
 import { ensureInvite } from "@/lib/actions";
 import { useAppState } from "@/lib/store";
 import { errorMessage } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc";
 import { toast } from "@/lib/ui";
 import { useEffect, useState } from "react";
 
@@ -64,6 +65,46 @@ export function InvitePanel() {
               Copiar link
             </button>
           </div>
+          <form
+            className="frow"
+            style={{ marginTop: 10 }}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = e.currentTarget;
+              const email = String(
+                new FormData(form).get("email") ?? "",
+              ).trim();
+              if (!email) return;
+              try {
+                const r = await trpc.household.sendInviteEmail.mutate({
+                  email,
+                });
+                if (r.sent) {
+                  toast(`Convite enviado para ${email}.`);
+                  form.reset();
+                } else {
+                  toast(
+                    "O envio de e-mail ainda não está ligado. Copie o link e mande pelo WhatsApp.",
+                  );
+                }
+              } catch (err) {
+                setError(
+                  errorMessage(err, "Não foi possível enviar o e-mail."),
+                );
+              }
+            }}
+          >
+            <input
+              name="email"
+              type="email"
+              placeholder="Enviar por e-mail: nome@exemplo.com"
+              aria-label="E-mail de quem você quer convidar"
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button type="submit" className="btn btn-small">
+              Enviar
+            </button>
+          </form>
         </>
       ) : error ? (
         <p role="alert" className="meta">

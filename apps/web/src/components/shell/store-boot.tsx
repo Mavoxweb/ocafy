@@ -9,7 +9,12 @@ export function StoreBoot() {
   useEffect(() => {
     applyTheme(readTheme());
     // Nas telas de login não há sessão: evita um 401 inútil na abertura.
-    const onAuthPage = ["/entrar", "/cadastro"].includes(location.pathname);
+    const onAuthPage = [
+      "/entrar",
+      "/cadastro",
+      "/esqueci-senha",
+      "/redefinir-senha",
+    ].includes(location.pathname);
     const stopSync = startSync({ initial: !onAuthPage });
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const onScheme = () => {

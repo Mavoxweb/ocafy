@@ -119,6 +119,17 @@ export function AuthForm({ mode }: { mode: "in" | "up" }) {
               className="pw"
             />
           </Field>
+          {mode === "in" && (
+            <div className="-mt-1 text-right">
+              <Link
+                href="/esqueci-senha"
+                className="link"
+                style={{ padding: 0, fontSize: "0.85rem" }}
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
+          )}
         </div>
         {error && (
           <p role="alert" className="mt-3 text-[0.9rem] font-bold text-late-t">

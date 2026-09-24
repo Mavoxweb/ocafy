@@ -52,6 +52,18 @@ pnpm --filter @ocafy/web dev            # http://localhost:3000
 
 O protótipo `index.html` continua como referência visual.
 
+## E-mails (Resend)
+
+O código de e-mail já está pronto; falta só a chave. Sem `RESEND_API_KEY` nada é enviado e o app funciona normalmente.
+
+1. **Resend** → *Domains* → adicione o seu domínio e crie no DNS os registros pedidos (SPF, DKIM). Aguarde "Verified".
+2. *API Keys* → crie uma chave. Na Vercel (e no `.env.local`): `RESEND_API_KEY`, `EMAIL_FROM` (ex.: `Ocafy <ola@seudominio.com.br>`) e `APP_URL`.
+3. **Recuperação de senha** (sai pelo Neon Auth, não pelo app): Neon Console → *Auth* → *SMTP* → *Custom SMTP* com
+   host `smtp.resend.com`, porta `465`, usuário `resend`, senha = a mesma API key, remetente = o mesmo `EMAIL_FROM`.
+   As telas `/esqueci-senha` e `/redefinir-senha` já existem; o domínio do app precisa estar em *Trusted domains*.
+4. **Convite por e-mail** (Ajustes/tela inicial → "Enviar por e-mail") já usa o Resend assim que a chave existir.
+5. *(opcional)* Webhook em Resend → *Webhooks* → `https://SEU-DOMINIO/api/webhooks/resend`; copie o *Signing secret* para `RESEND_WEBHOOK_SECRET`.
+
 ## Deploy (Vercel)
 
 1. Importe o repositório com **Root Directory = `apps/web`** (o `vercel.json` já fixa as funções em `gru1`, perto do Neon em São Paulo).

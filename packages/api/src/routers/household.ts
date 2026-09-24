@@ -13,6 +13,8 @@ import { TRPCError } from "@trpc/server";
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseAvatarDataUrl } from "../avatar";
+import { sendEmail } from "../email/send";
+import { inviteEmail } from "../email/templates";
 import { createHouseholdSchema, joinSchema, roomId } from "../schemas/index";
 import { loadSnapshot } from "../snapshot";
 import { authedProcedure, memberProcedure, router } from "../trpc";
@@ -192,6 +194,70 @@ export const householdRouter = router({
       .returning();
     return { code: created.code, expiresAt: created.expiresAt.toISOString() };
   }),
+
+  /**
+   * Envia o convite por e-mail (Resend). O link usa APP_URL do servidor, nunca um
+   * endereço vindo do cliente (evita usar o Ocafy para mandar links de phishing).
+   */
+  sendInviteEmail: memberProcedure
+    .input(
+      z.object({ email: z.string().trim().toLowerCase().email().max(120) }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [{ n }] = await db
+        .select({ n: count() })
+        .from(householdMembers)
+        .where(eq(householdMembers.householdId, ctx.householdId));
+      if (n >= 2) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "A casa já tem duas pessoas.",
+        });
+      }
+      const [active] = await db
+        .select()
+        .from(invites)
+        .where(
+          and(
+            eq(invites.householdId, ctx.householdId),
+            isNull(invites.usedAt),
+            gt(invites.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
+      const invite =
+        active ??
+        (
+          await db
+            .insert(invites)
+            .values({
+              householdId: ctx.householdId,
+              code: newCode(),
+              expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+            })
+            .returning()
+        )[0];
+      const [house] = await db
+        .select({ name: households.name })
+        .from(households)
+        .where(eq(households.id, ctx.householdId));
+      const base = (process.env.APP_URL ?? "https://ocafy.vercel.app").replace(
+        /\/$/,
+        "",
+      );
+      const mail = inviteEmail({
+        inviterName: ctx.member.displayName,
+        houseName: house?.name ?? "Casa",
+        url: `${base}/entrar?convite=${invite.code}`,
+        code: invite.code,
+      });
+      const res = await sendEmail({ to: input.email, ...mail, tag: "invite" });
+      return {
+        code: invite.code,
+        sent: res.sent,
+        reason: res.sent ? null : res.reason,
+      };
+    }),
 
   rename: memberProcedure
     .input(z.object({ name: z.string().trim().min(2).max(24) }))
