@@ -1,10 +1,14 @@
 import type {
   AgeBand,
+  BillingInterval,
   DaySchedule,
+  Entitlements,
   HouseProfile,
   LitterSettings,
   NotifPrefs,
   Pet,
+  PlanId,
+  PlanSource,
   RoomInstance,
   ShopCadence,
   ShopUrgency,
@@ -13,6 +17,7 @@ import {
   completionReactions,
   completions,
   db,
+  entitlementGrants,
   householdMembers,
   households,
   inventoryItems,
@@ -32,11 +37,13 @@ import {
   shoppingItems,
   shoppingTrips,
   storeRewards,
+  subscriptions,
   taskAssignments,
   taskOverrides,
   taskTrades,
 } from "@ocafy/db";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { checkoutUrls, resolveFromRows } from "./entitlements";
 import { prefsFromRow } from "./notifications";
 import { petOf, profileOf, roomsOf } from "./plan";
 import { pushConfigured, vapidPublicKey } from "./push";
@@ -161,6 +168,20 @@ export interface Snapshot {
       note: string | null;
     }[];
   };
+  /** Casa suspensa pelo administrador (só leitura). */
+  suspended: { reason: string | null } | null;
+  /** Plano efetivo (calculado no servidor) e o que o app pode oferecer. */
+  plan: {
+    id: PlanId;
+    source: PlanSource;
+    expiresAt: string | null;
+    trialEndsAt: string | null;
+    pastDue: boolean;
+    entitlements: Entitlements;
+    usage: { pets: number; projects: number };
+    /** Links de pagamento (nulo = ainda não configurado). */
+    checkout: Record<BillingInterval, string | null>;
+  };
   /** Convite ativo (só aparece enquanto a casa tem menos de 2 membros). */
   invite: { code: string; expiresAt: string } | null;
 }
@@ -201,6 +222,8 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     deviceRows,
     scheduleRows,
     absenceRows,
+    grantRows,
+    subRows,
   ] = await db.batch([
     db
       .select({
@@ -267,6 +290,11 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       .where(eq(pushSubscriptions.memberId, me)),
     db.select().from(memberSchedule).where(eq(memberSchedule.memberId, me)),
     db.select().from(memberAbsences).where(eq(memberAbsences.memberId, me)),
+    db
+      .select()
+      .from(entitlementGrants)
+      .where(eq(entitlementGrants.householdId, hid)),
+    db.select().from(subscriptions).where(eq(subscriptions.householdId, hid)),
   ]);
 
   const member = memberRows.find((m) => m.userId === userId);
@@ -428,6 +456,25 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
         }))
         .sort((a, b) => (a.from < b.from ? -1 : 1)),
     },
+    suspended: household.suspendedAt
+      ? { reason: household.suspendedReason }
+      : null,
+    plan: (() => {
+      const r = resolveFromRows(grantRows, subRows, now);
+      return {
+        id: r.plan,
+        source: r.source,
+        expiresAt: r.expiresAt,
+        trialEndsAt: r.trialEndsAt,
+        pastDue: r.pastDue,
+        entitlements: r.entitlements,
+        usage: {
+          pets: petRows.length,
+          projects: household.officeProject ? 1 : 0,
+        },
+        checkout: checkoutUrls(household.id),
+      };
+    })(),
     invite: invite
       ? { code: invite.code, expiresAt: iso(invite.expiresAt) }
       : null,

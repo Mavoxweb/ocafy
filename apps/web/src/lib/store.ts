@@ -2,15 +2,19 @@
 
 import {
   type AgeBand,
+  type BillingInterval,
   type CompletionEntry,
   DEFAULT_PREFS,
   DEFAULT_PROFILE,
   type DaySchedule,
+  type Entitlements,
   type HouseProfile,
   type LitterSettings,
   type MemberSlot,
   type NotifPrefs,
   type Pet,
+  type PlanId,
+  type PlanSource,
   type RoomInstance,
   type ShopCadence,
   type ShopUrgency,
@@ -136,6 +140,17 @@ export interface NotificationsState {
   absences: { id: string; from: string; until: string; note: string | null }[];
 }
 
+export interface PlanState {
+  id: PlanId;
+  source: PlanSource;
+  expiresAt: string | null;
+  trialEndsAt: string | null;
+  pastDue: boolean;
+  entitlements: Entitlements;
+  usage: { pets: number; projects: number };
+  checkout: Record<BillingInterval, string | null>;
+}
+
 export type LoadStatus = "loading" | "anon" | "nohousehold" | "ready" | "error";
 
 export interface AppState {
@@ -159,6 +174,9 @@ export interface AppState {
   office: OfficeState;
   shopping: ShoppingState;
   notifications: NotificationsState;
+  /** Casa suspensa pelo administrador (só leitura). */
+  suspended: { reason: string | null } | null;
+  plan: PlanState;
   rewards: Reward[];
   purchases: Purchase[];
   reactions: Reaction[];
@@ -192,6 +210,17 @@ export const EMPTY_STATE: AppState = {
   meals: [],
   office: { start: null, done: {}, steps: {}, inventory: [] },
   shopping: { items: [], cadence: null, day: null, trips: [] },
+  suspended: null,
+  plan: {
+    id: "free",
+    source: null,
+    expiresAt: null,
+    trialEndsAt: null,
+    pastDue: false,
+    entitlements: { family: false, maxPets: 1, maxProjects: 1 },
+    usage: { pets: 0, projects: 0 },
+    checkout: { quarterly: null, yearly: null },
+  },
   notifications: {
     prefs: DEFAULT_PREFS,
     devices: 0,

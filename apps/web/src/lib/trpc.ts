@@ -1,6 +1,7 @@
 "use client";
 
 import type { AppRouter } from "@ocafy/api";
+import { parsePlanLimit } from "@ocafy/core";
 import { TRPCClientError, createTRPCClient, httpBatchLink } from "@trpc/client";
 
 export const trpc = createTRPCClient<AppRouter>({
@@ -13,6 +14,11 @@ export function errorCode(e: unknown): TRPCCode | null {
   return e instanceof TRPCClientError ? (e.data?.code ?? null) : null;
 }
 
+/** O erro é de limite do plano (o app oferece o Plus)? */
+export function isPlanLimit(e: unknown): boolean {
+  return e instanceof TRPCClientError && !!parsePlanLimit(e.message);
+}
+
 export function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof TRPCClientError) {
     const zod = e.data?.zodError as
@@ -22,6 +28,8 @@ export function errorMessage(e: unknown, fallback: string): string {
       ? Object.values(zod.fieldErrors).flat()[0]
       : undefined;
     if (first) return first;
+    const limit = parsePlanLimit(e.message);
+    if (limit) return limit.text;
     if (
       e.data?.code &&
       e.data.code !== "INTERNAL_SERVER_ERROR" &&

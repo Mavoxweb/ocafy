@@ -116,6 +116,50 @@ export function InviteCard() {
   return <InvitePanel />;
 }
 
+/* ---------- teste acabando / pagamento pendente ---------- */
+export function PlanBanner() {
+  const s = useAppState();
+  const now = useNow();
+  const p = s.plan;
+  if (p.pastDue) {
+    const left = p.expiresAt
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(p.expiresAt).getTime() - now.getTime()) / 86_400_000,
+          ),
+        )
+      : null;
+    return (
+      <Link href="/plano" className="panel banner-warn">
+        <b>Não conseguimos cobrar sua assinatura</b>
+        <span className="meta m-0">
+          Atualize o pagamento
+          {left != null ? ` em até ${left} ${left === 1 ? "dia" : "dias"}` : ""}{" "}
+          para manter o Plus.
+        </span>
+      </Link>
+    );
+  }
+  if (p.source === "trial" && p.trialEndsAt) {
+    const days = Math.ceil(
+      (new Date(p.trialEndsAt).getTime() - now.getTime()) / 86_400_000,
+    );
+    if (days > 3) return null;
+    return (
+      <Link href="/plano" className="panel banner-warn">
+        <b>
+          {days <= 0
+            ? "Seu teste do Plus termina hoje"
+            : `Faltam ${days} ${days === 1 ? "dia" : "dias"} do teste do Plus`}
+        </b>
+        <span className="meta m-0">Veja o que muda e escolha seu plano.</span>
+      </Link>
+    );
+  }
+  return null;
+}
+
 /* ---------- convite para ligar os lembretes (uma vez; dispensável) ---------- */
 export function ReminderNudge() {
   const s = useAppState();

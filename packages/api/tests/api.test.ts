@@ -7,12 +7,14 @@ import {
 } from "@ocafy/core";
 import {
   db,
+  entitlementGrants,
   householdMembers,
   households,
   litterSettings,
   onboardingEvents,
   pets,
   rooms,
+  subscriptions,
 } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { eq, inArray } from "drizzle-orm";
@@ -1025,6 +1027,189 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(await code(() => owner.c.shopping.add({ name: "   " }))).toBe(
       "BAD_REQUEST",
     );
+  });
+
+  it("planos: casa nova ganha 14 dias de Plus; depois do teste valem os limites do grátis", async () => {
+    const { c, householdId } = await newHouse("Casa Planos", null, {
+      profile: { mode: "family" },
+      pets: [{ name: "Rex", species: "dog", size: "small" }],
+    });
+    let snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.plan).toMatchObject({ id: "plus", source: "trial" });
+    expect(snap.data.plan.trialEndsAt).toBeTruthy();
+    expect(snap.data.plan.entitlements.family).toBe(true);
+
+    // o teste acaba (a data vem do banco, nunca do cliente)
+    await db
+      .update(entitlementGrants)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(entitlementGrants.householdId, householdId));
+    snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.plan.id).toBe("free");
+    expect(snap.data.plan.entitlements).toMatchObject({
+      family: false,
+      maxPets: 1,
+    });
+
+    const profile = snap.data.profile;
+    const rooms = [{ kind: "cozinha" as const }];
+    // já é família: continua sendo, sem bloqueio
+    await c.household.updateProfile({
+      profile: { ...profile, mode: "family" },
+      rooms,
+      pets: [
+        {
+          id: snap.data.pets[0].id,
+          name: "Rex",
+          species: "dog",
+          size: "small",
+        },
+      ],
+    });
+    // 2º pet: bloqueado, com marca de limite de plano
+    const err = await c.household
+      .updateProfile({
+        profile: { ...profile, mode: "family" },
+        rooms,
+        pets: [
+          {
+            id: snap.data.pets[0].id,
+            name: "Rex",
+            species: "dog",
+            size: "small",
+          },
+          { name: "Mia", species: "cat" },
+        ],
+      })
+      .catch((e) => e as TRPCError);
+    expect(err).toBeInstanceOf(TRPCError);
+    expect((err as TRPCError).code).toBe("FORBIDDEN");
+    expect((err as TRPCError).message).toMatch(/^PLAN_LIMIT:pets\|/);
+    // perfil de criança novo também é do Plus
+    expect(
+      await code(() =>
+        c.members.addProfile({ name: "Bia", ageBand: "child_4_6" }),
+      ),
+    ).toBe("FORBIDDEN");
+
+    // liberação manual do admin: 3 pets nesta casa, sem virar Plus
+    await db.insert(entitlementGrants).values({
+      householdId,
+      plan: "free",
+      source: "manual",
+      overrides: { maxPets: 3 },
+      reason: "teste",
+      grantedBy: "test",
+    });
+    await c.household.updateProfile({
+      profile: { ...profile, mode: "family" },
+      rooms,
+      pets: [
+        {
+          id: snap.data.pets[0].id,
+          name: "Rex",
+          species: "dog",
+          size: "small",
+        },
+        { name: "Mia", species: "cat" },
+        { name: "Bob", species: "dog", size: "mini" },
+      ],
+    });
+    snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.pets).toHaveLength(3);
+    expect(snap.data.plan.id).toBe("free");
+
+    // quem sai do modo Família no grátis não volta sem o Plus
+    await c.household.updateProfile({
+      profile: { ...profile, mode: "couple" },
+      rooms,
+      pets: snap.data.pets.map((p) => ({
+        id: p.id,
+        name: p.name,
+        species: p.species,
+      })),
+    });
+    expect(
+      await code(() =>
+        c.household.updateProfile({
+          profile: { ...profile, mode: "family" },
+          rooms,
+          pets: snap.data.pets.map((p) => ({
+            id: p.id,
+            name: p.name,
+            species: p.species,
+          })),
+        }),
+      ),
+    ).toBe("FORBIDDEN");
+  });
+
+  it("assinatura: valida e carência mantêm o Plus; expirada volta ao grátis", async () => {
+    const { c, householdId } = await newHouse("Casa Assinante", null);
+    await db
+      .update(entitlementGrants)
+      .set({ revokedAt: new Date() })
+      .where(eq(entitlementGrants.householdId, householdId));
+    const plan = async () => {
+      const s = await c.household.snapshot();
+      if (s.status !== "ready") throw new Error();
+      return s.data.plan;
+    };
+    expect((await plan()).id).toBe("free");
+
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({
+        householdId,
+        provider: "manual",
+        providerRef: `t-${randomUUID()}`,
+        status: "active",
+        interval: "quarterly",
+        currentPeriodEnd: new Date(Date.now() + 30 * 864e5),
+      })
+      .returning();
+    expect(await plan()).toMatchObject({
+      id: "plus",
+      source: "subscription",
+      pastDue: false,
+    });
+
+    await db
+      .update(subscriptions)
+      .set({
+        status: "past_due",
+        currentPeriodEnd: new Date(Date.now() - 2 * 864e5),
+        graceUntil: new Date(Date.now() + 5 * 864e5),
+      })
+      .where(eq(subscriptions.id, sub.id));
+    expect(await plan()).toMatchObject({ id: "plus", pastDue: true });
+
+    await db
+      .update(subscriptions)
+      .set({ graceUntil: new Date(Date.now() - 864e5) })
+      .where(eq(subscriptions.id, sub.id));
+    expect(await plan()).toMatchObject({ id: "free", pastDue: false });
+  });
+
+  it("casa suspensa pelo admin: escrita bloqueada, leitura do estado continua", async () => {
+    const { c, householdId } = await newHouse("Casa Suspensa", null);
+    await c.tasks.complete({ taskKey: "aspirar", ...completion() });
+    await db
+      .update(households)
+      .set({ suspendedAt: new Date(), suspendedReason: "Teste de suspensão" })
+      .where(eq(households.id, householdId));
+    const err = await c.tasks
+      .complete({ taskKey: "lixo", ...completion() })
+      .catch((e) => e as TRPCError);
+    expect((err as TRPCError).code).toBe("FORBIDDEN");
+    expect((err as TRPCError).message).toBe("HOUSEHOLD_SUSPENDED");
+    const snap = await c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.suspended).toEqual({ reason: "Teste de suspensão" });
+    expect(snap.data.completions).toHaveLength(1); // nada é apagado
   });
 
   it("apagar a casa remove tudo em cascata", async () => {

@@ -1,4 +1,4 @@
-import { db, householdMembers } from "@ocafy/db";
+import { db, householdMembers, households } from "@ocafy/db";
 import { TRPCError, initTRPC } from "@trpc/server";
 import { eq } from "drizzle-orm";
 
@@ -42,17 +42,26 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * sessão, nunca de parâmetros do cliente — o isolamento entre casas depende disso.
  */
 export const memberProcedure = authedProcedure.use(async ({ ctx, next }) => {
-  const [member] = await db
-    .select(memberColumns)
+  const [row] = await db
+    .select({ ...memberColumns, suspendedAt: households.suspendedAt })
     .from(householdMembers)
+    .innerJoin(households, eq(households.id, householdMembers.householdId))
     .where(eq(householdMembers.userId, ctx.userId))
     .limit(1);
-  if (!member) {
+  if (!row) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: "NO_HOUSEHOLD",
     });
   }
+  // Casa suspensa pelo administrador: só leitura do próprio estado (snapshot).
+  if (row.suspendedAt) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "HOUSEHOLD_SUSPENDED",
+    });
+  }
+  const { suspendedAt: _s, ...member } = row;
   return next({
     ctx: { userId: ctx.userId, member, householdId: member.householdId },
   });

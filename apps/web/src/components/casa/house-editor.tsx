@@ -10,6 +10,7 @@ import {
   draftPlan,
   newPet,
 } from "@/lib/house-draft";
+import { useAppState } from "@/lib/store";
 import {
   AGE_BANDS,
   AGE_BAND_ORDER,
@@ -33,6 +34,7 @@ import {
   slugFor,
   summarizePlan,
 } from "@ocafy/core";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type Patch = (fn: (d: HouseDraft) => HouseDraft) => void;
@@ -135,6 +137,10 @@ export function ModePicker({
   draft,
   patch,
 }: { draft: HouseDraft; patch: Patch }) {
+  const s = useAppState();
+  // Só vale para casas que já existem: no onboarding o teste de 14 dias libera tudo.
+  const familyLocked =
+    !!s.household && !s.plan.entitlements.family && s.profile.mode !== "family";
   return (
     <div className="grid gap-2.5">
       <div className="mode-grid">
@@ -144,6 +150,7 @@ export function ModePicker({
             type="button"
             className="mode-card"
             aria-pressed={draft.profile.mode === m}
+            disabled={m === "family" && familyLocked}
             onClick={() =>
               patch((d) => ({ ...d, profile: { ...d.profile, mode: m } }))
             }
@@ -152,10 +159,22 @@ export function ModePicker({
               {MODE_TEXT[m][0]}
             </span>
             <b>{MODE_LABELS[m]}</b>
-            <span className="meta">{MODE_TEXT[m][1]}</span>
+            <span className="meta">
+              {m === "family" && familyLocked
+                ? "Faz parte do plano Plus"
+                : MODE_TEXT[m][1]}
+            </span>
           </button>
         ))}
       </div>
+      {familyLocked && (
+        <p className="meta m-0">
+          <Link href="/plano" className="link">
+            Conheça o plano Plus
+          </Link>{" "}
+          para usar o modo Família.
+        </p>
+      )}
     </div>
   );
 }
@@ -393,6 +412,12 @@ export function PetsEditor({
   draft,
   patch,
 }: { draft: HouseDraft; patch: Patch }) {
+  const s = useAppState();
+  // Só bloqueia AUMENTAR além do limite do plano (quem já tem mais mantém).
+  const petsLocked =
+    !!s.household &&
+    draft.pets.length >= s.plan.entitlements.maxPets &&
+    draft.pets.length >= s.pets.length;
   const add = (species: PetSpecies) =>
     patch((d) => ({
       ...d,
@@ -418,6 +443,7 @@ export function PetsEditor({
             type="button"
             className="chip"
             aria-label={`Adicionar ${PET_SPECIES[sp].label.toLowerCase()}`}
+            disabled={petsLocked}
             onClick={() => add(sp)}
           >
             <span aria-hidden="true">{PET_SPECIES[sp].icon}</span>+{" "}
@@ -425,6 +451,16 @@ export function PetsEditor({
           </button>
         ))}
       </div>
+      {petsLocked && (
+        <p className="meta m-0">
+          O plano Grátis comporta {s.plan.entitlements.maxPets}{" "}
+          {s.plan.entitlements.maxPets === 1 ? "pet" : "pets"}.{" "}
+          <Link href="/plano" className="link">
+            Veja o Plus
+          </Link>{" "}
+          para adicionar mais.
+        </p>
+      )}
       {!draft.pets.length && (
         <p className="meta">
           Sem pets? Tudo bem — é só continuar. Dá para adicionar depois em

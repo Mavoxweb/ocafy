@@ -6,6 +6,7 @@ import {
   InviteCard,
   OfficeShortcut,
   PeopleCards,
+  PlanBanner,
   ReminderNudge,
   RoomsCarousel,
   TodayHero,
@@ -39,6 +40,7 @@ export default function TodayPage() {
     <>
       <TodayHero />
       <PeopleCards />
+      <PlanBanner />
       <InviteCard />
       <ReminderNudge />
       <AssignedTasks />

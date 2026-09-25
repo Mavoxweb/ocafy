@@ -3,11 +3,13 @@ import {
   DEFAULT_REWARDS,
   type HouseMode,
   MODE_LIMITS,
+  TRIAL_DAYS,
   buildRooms,
   nextFreeSlot,
 } from "@ocafy/core";
 import {
   db,
+  entitlementGrants,
   householdMembers,
   households,
   invites,
@@ -24,6 +26,7 @@ import { z } from "zod";
 import { parseAvatarDataUrl } from "../avatar";
 import { sendEmail } from "../email/send";
 import { inviteEmail } from "../email/templates";
+import { assertWithinPlan, loadEntitlements } from "../entitlements";
 import { fullMessage, limitsOf, loadRoster } from "../roster";
 import {
   createHouseholdSchema,
@@ -95,12 +98,23 @@ const profileColumns = (p: {
   officeProject: p.officeProject,
 });
 
+/** Mais de dois adultos com conta é recurso do plano Plus (Família). */
+async function assertFamilyPlan(householdId: string) {
+  const { entitlements } = await loadEntitlements(householdId);
+  assertWithinPlan(
+    entitlements,
+    { mode: "couple", pets: 0, projects: 0 },
+    { mode: "family", pets: 0, projects: 0 },
+  );
+}
+
 /** Barra convites quando a casa já tem todos os adultos que o modo permite. */
 async function assertRoomForMember(householdId: string) {
   const r = await loadRoster(householdId);
   if (r.adults >= limitsOf(r.mode).adults) {
     throw new TRPCError({ code: "CONFLICT", message: fullMessage(r.mode) });
   }
+  if (r.adults >= 2) await assertFamilyPlan(householdId);
   return r;
 }
 
@@ -150,6 +164,13 @@ export const householdRouter = router({
             displayName: input.memberName,
             role: "owner",
             slot: "a",
+          }),
+          db.insert(entitlementGrants).values({
+            householdId,
+            plan: "plus",
+            source: "trial",
+            expiresAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
+            reason: "Teste gratuito de boas-vindas",
           }),
           db.insert(litterSettings).values({
             householdId,
@@ -224,6 +245,7 @@ export const householdRouter = router({
             : "Esta casa já está completa.",
       });
     }
+    if (roster.adults >= 2) await assertFamilyPlan(invite.householdId);
     const slot = nextFreeSlot(roster.slots);
     if (!slot) {
       throw new TRPCError({
@@ -376,13 +398,31 @@ export const householdRouter = router({
   updateProfile: memberProcedure
     .input(updateProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      const [roster, existingPets] = await Promise.all([
+      const [roster, existingPets, [houseNow], plan] = await Promise.all([
         loadRoster(ctx.householdId),
         db
           .select({ id: pets.id })
           .from(pets)
           .where(eq(pets.householdId, ctx.householdId)),
+        db
+          .select({ mode: households.mode, office: households.officeProject })
+          .from(households)
+          .where(eq(households.id, ctx.householdId)),
+        loadEntitlements(ctx.householdId),
       ]);
+      assertWithinPlan(
+        plan.entitlements,
+        {
+          mode: houseNow?.mode ?? "couple",
+          pets: existingPets.length,
+          projects: houseNow?.office ? 1 : 0,
+        },
+        {
+          mode: input.profile.mode,
+          pets: input.pets.length,
+          projects: input.profile.officeProject ? 1 : 0,
+        },
+      );
       const lim = MODE_LIMITS[input.profile.mode];
       if (roster.adults > lim.adults) {
         throw new TRPCError({

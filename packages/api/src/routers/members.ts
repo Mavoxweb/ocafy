@@ -3,6 +3,7 @@ import { db, householdMembers } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { assertWithinPlan, loadEntitlements } from "../entitlements";
 import { loadRoster } from "../roster";
 import { memberProfileSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
@@ -23,6 +24,13 @@ export const membersRouter = router({
     .input(memberProfileSchema)
     .mutation(async ({ ctx, input }) => {
       const roster = await loadRoster(ctx.householdId);
+      // Perfis de criança são do plano Plus (quem já tem os que criou continua vendo e usando).
+      const plan = await loadEntitlements(ctx.householdId);
+      assertWithinPlan(
+        plan.entitlements,
+        { mode: "couple", pets: 0, projects: 0 },
+        { mode: "family", pets: 0, projects: 0 },
+      );
       if (roster.mode !== "family") {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",

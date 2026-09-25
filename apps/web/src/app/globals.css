@@ -2262,3 +2262,24 @@ input[type="range"] {
   border-color: var(--fresh);
   color: #fff;
 }
+
+/* planos */
+.banner-warn {
+  display: grid;
+  gap: 2px;
+  border-color: var(--due);
+  background: color-mix(in srgb, var(--due) 12%, var(--card));
+  color: var(--ink);
+  text-decoration: none;
+}
+.plan-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--tint);
+}
+.plan-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+  display: grid;
+  gap: 4px;
+}

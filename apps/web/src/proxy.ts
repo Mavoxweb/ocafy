@@ -17,5 +17,6 @@ export const config = {
     "/casa/:path*",
     "/compras/:path*",
     "/lembretes/:path*",
+    "/plano/:path*",
   ],
 };

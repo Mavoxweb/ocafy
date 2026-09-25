@@ -57,6 +57,13 @@
       "when": 1790295074848,
       "tag": "0007_nebulous_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790296366497,
+      "tag": "0008_mysterious_quicksilver",
+      "breakpoints": true
     }
   ]
 }

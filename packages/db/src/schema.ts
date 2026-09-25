@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   real,
   text,
@@ -56,6 +57,9 @@ export const households = pgTable("households", {
   /** Dia da semana preferido para as compras (0 = domingo). */
   shopDay: integer("shop_day"),
   onboardedAt: timestamp("onboarded_at"),
+  /** Casa suspensa pelo admin (abuso, chargeback…): só leitura do próprio snapshot. */
+  suspendedAt: timestamp("suspended_at"),
+  suspendedReason: text("suspended_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -570,5 +574,95 @@ export const notificationLog = pgTable(
   (t) => [
     uniqueIndex("notification_log_dedupe_uq").on(t.memberId, t.dedupeKey),
     index("notification_log_created_idx").on(t.createdAt),
+  ],
+);
+
+/** Liberações de plano por casa: teste, cortesia, ajuste manual do admin. Nunca apagadas (auditoria). */
+export const entitlementGrants = pgTable(
+  "entitlement_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    plan: text("plan", { enum: ["free", "plus"] }).notNull(),
+    source: text("source", {
+      enum: ["trial", "founder", "manual", "promo"],
+    }).notNull(),
+    startsAt: timestamp("starts_at").defaultNow().notNull(),
+    /** Nulo = sem prazo. */
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    /** Ajustes finos: { family?: boolean, maxPets?: number, maxProjects?: number }. */
+    overrides: jsonb("overrides"),
+    reason: text("reason"),
+    /** "system" ou o e-mail de quem concedeu no painel. */
+    grantedBy: text("granted_by").default("system").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("entitlement_grants_household_idx").on(t.householdId)],
+);
+
+/** Assinatura paga da casa (web/Cakto, Google Play/RevenueCat ou manual). */
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    provider: text("provider", { enum: ["cakto", "play", "manual"] }).notNull(),
+    /** Identificador da assinatura no provedor (idempotência). */
+    providerRef: text("provider_ref").notNull(),
+    plan: text("plan", { enum: ["plus"] })
+      .default("plus")
+      .notNull(),
+    interval: text("interval", { enum: ["monthly", "quarterly", "yearly"] })
+      .default("quarterly")
+      .notNull(),
+    status: text("status", {
+      enum: ["active", "trialing", "past_due", "canceled", "expired"],
+    }).notNull(),
+    currentPeriodEnd: timestamp("current_period_end"),
+    /** Fim da carência depois de uma falha de pagamento. */
+    graceUntil: timestamp("grace_until"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    payerEmail: text("payer_email"),
+    /** Último aviso de cobrança enviado (0 = nenhum). */
+    dunningStep: integer("dunning_step").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("subscriptions_provider_ref_uq").on(t.provider, t.providerRef),
+    index("subscriptions_household_idx").on(t.householdId),
+  ],
+);
+
+/** Todo evento recebido dos provedores, guardado cru e processado uma única vez (idempotente). */
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    provider: text("provider", { enum: ["cakto", "play", "manual"] }).notNull(),
+    /** Id do evento no provedor: o mesmo evento chegando duas vezes é ignorado. */
+    eventId: text("event_id").notNull(),
+    type: text("type").notNull(),
+    householdId: uuid("household_id").references(() => households.id, {
+      onDelete: "set null",
+    }),
+    payload: jsonb("payload").notNull(),
+    status: text("status", {
+      enum: ["received", "applied", "ignored", "error"],
+    })
+      .default("received")
+      .notNull(),
+    error: text("error"),
+    receivedAt: timestamp("received_at").defaultNow().notNull(),
+    appliedAt: timestamp("applied_at"),
+  },
+  (t) => [
+    uniqueIndex("billing_events_uq").on(t.provider, t.eventId),
+    index("billing_events_received_idx").on(t.receivedAt),
   ],
 );

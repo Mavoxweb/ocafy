@@ -40,7 +40,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </main>
       )}
-      {ready && (
+      {ready && s.suspended && (
+        <main className="mx-auto flex min-h-screen max-w-[420px] flex-col items-center justify-center gap-3 px-4 text-center">
+          <h1 className="text-[1.4rem]">Esta casa está suspensa</h1>
+          <p className="meta">
+            {s.suspended.reason ? `Motivo: ${s.suspended.reason}. ` : ""}
+            Seus dados continuam guardados. Fale com o suporte para resolver.
+          </p>
+        </main>
+      )}
+      {ready && !s.suspended && (
         <NowProvider>
           <div className="mx-auto max-w-[640px] px-4 pb-40 md:max-w-[760px]">
             <AppBar />

@@ -168,6 +168,18 @@ export function SettingsSheet() {
         Editar minha casa
       </Link>
 
+      <h4>Meu plano</h4>
+      <p className="meta">
+        {s.plan.id === "plus"
+          ? s.plan.source === "trial"
+            ? "Teste do plano Plus em andamento."
+            : "Plano Plus ativo."
+          : "Plano Grátis."}
+      </p>
+      <Link href="/plano" className="btn" onClick={closeSheet}>
+        Ver planos
+      </Link>
+
       <h4>Lembretes e agenda</h4>
       <p className="meta">
         Avisos no horário certo, respeitando os dias em que você está fora de

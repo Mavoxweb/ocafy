@@ -18,8 +18,9 @@ import {
 } from "@/lib/house-draft";
 import { ADULT_LIMIT, adultsOf, planOf } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
-import { errorMessage } from "@/lib/trpc";
+import { errorMessage, isPlanLimit } from "@/lib/trpc";
 import { toast } from "@/lib/ui";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /** "Minha casa": área permanente para mudar cômodos, pets, modo e ritmo. */
@@ -28,6 +29,7 @@ export default function CasaPage() {
   const [draft, setDraft] = useState<HouseDraft>(() => draftFromState(s));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [planLimit, setPlanLimit] = useState(false);
 
   const saved = useMemo(() => draftSignature(draftFromState(s)), [s]);
   const dirty = draftSignature(draft) !== saved;
@@ -51,11 +53,13 @@ export default function CasaPage() {
   async function save() {
     setBusy(true);
     setError("");
+    setPlanLimit(false);
     try {
       await saveHouseProfile(draft);
       toast("Casa atualizada. As rotinas já se ajustaram.");
     } catch (e) {
       setError(errorMessage(e, "Não foi possível salvar. Tente de novo."));
+      setPlanLimit(isPlanLimit(e));
     } finally {
       setBusy(false);
     }
@@ -117,7 +121,12 @@ export default function CasaPage() {
 
       {error && (
         <p role="alert" className="mt-3 text-[0.9rem] font-bold text-late-t">
-          {error}
+          {error}{" "}
+          {planLimit && (
+            <Link href="/plano" className="link">
+              Ver o plano Plus
+            </Link>
+          )}
         </p>
       )}
       <div className="sticky-save">
