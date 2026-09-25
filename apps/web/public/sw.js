@@ -1,6 +1,8 @@
 /* Service worker do Ocafy: recebe avisos (Web Push) e abre o app ao tocar. */
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (event) =>
+  event.waitUntil(self.clients.claim()),
+);
 
 self.addEventListener("push", (event) => {
   let d = {};
@@ -23,10 +25,13 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const url = event.notification.data?.url || "/";
   event.waitUntil(
     (async () => {
-      const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const all = await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
       for (const c of all) {
         if ("focus" in c) {
           if ("navigate" in c) await c.navigate(url).catch(() => {});

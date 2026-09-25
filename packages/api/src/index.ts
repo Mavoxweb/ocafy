@@ -21,3 +21,11 @@ export {
   redactPayload,
   type ProcessResult,
 } from "./billing";
+export * as admin from "./admin/index";
+export {
+  exportAccountData,
+  deleteAccountData,
+  openDataRequest,
+  REQUEST_SLA_DAYS,
+} from "./lgpd";
+export { flag, invalidateFlags } from "./flags";

@@ -1,6 +1,7 @@
 import { db, householdMembers, households } from "@ocafy/db";
 import { TRPCError, initTRPC } from "@trpc/server";
 import { eq } from "drizzle-orm";
+import { flag } from "./flags";
 
 /** `userId` vem da sessão (Neon Auth), resolvida pelo app que hospeda a API. */
 export interface Context {
@@ -41,28 +42,37 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * Toda operação sobre dados da casa passa por aqui: a casa e o membro vêm da
  * sessão, nunca de parâmetros do cliente — o isolamento entre casas depende disso.
  */
-export const memberProcedure = authedProcedure.use(async ({ ctx, next }) => {
-  const [row] = await db
-    .select({ ...memberColumns, suspendedAt: households.suspendedAt })
-    .from(householdMembers)
-    .innerJoin(households, eq(households.id, householdMembers.householdId))
-    .where(eq(householdMembers.userId, ctx.userId))
-    .limit(1);
-  if (!row) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "NO_HOUSEHOLD",
+export const memberProcedure = authedProcedure.use(
+  async ({ ctx, next, type }) => {
+    // Modo manutenção (chave do painel admin): só leitura.
+    if (type === "mutation" && (await flag("maintenance", false))) {
+      throw new TRPCError({
+        code: "SERVICE_UNAVAILABLE",
+        message: "MAINTENANCE",
+      });
+    }
+    const [row] = await db
+      .select({ ...memberColumns, suspendedAt: households.suspendedAt })
+      .from(householdMembers)
+      .innerJoin(households, eq(households.id, householdMembers.householdId))
+      .where(eq(householdMembers.userId, ctx.userId))
+      .limit(1);
+    if (!row) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "NO_HOUSEHOLD",
+      });
+    }
+    // Casa suspensa pelo administrador: só leitura do próprio estado (snapshot).
+    if (row.suspendedAt) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "HOUSEHOLD_SUSPENDED",
+      });
+    }
+    const { suspendedAt: _s, ...member } = row;
+    return next({
+      ctx: { userId: ctx.userId, member, householdId: member.householdId },
     });
-  }
-  // Casa suspensa pelo administrador: só leitura do próprio estado (snapshot).
-  if (row.suspendedAt) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "HOUSEHOLD_SUSPENDED",
-    });
-  }
-  const { suspendedAt: _s, ...member } = row;
-  return next({
-    ctx: { userId: ctx.userId, member, householdId: member.householdId },
-  });
-});
+  },
+);

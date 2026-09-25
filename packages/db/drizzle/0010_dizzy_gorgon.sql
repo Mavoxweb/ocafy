@@ -1,0 +1,1 @@
+ALTER TABLE "platform_staff" ADD COLUMN "last_totp_step" bigint;

@@ -27,6 +27,7 @@ import { parseAvatarDataUrl } from "../avatar";
 import { sendEmail } from "../email/send";
 import { inviteEmail } from "../email/templates";
 import { assertWithinPlan, loadEntitlements } from "../entitlements";
+import { flag } from "../flags";
 import { fullMessage, limitsOf, loadRoster } from "../roster";
 import {
   createHouseholdSchema,
@@ -147,6 +148,12 @@ export const householdRouter = router({
   create: authedProcedure
     .input(createHouseholdSchema)
     .mutation(async ({ ctx, input }) => {
+      if (!(await flag("signups_open", true))) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Novos cadastros estão temporariamente fechados.",
+        });
+      }
       const householdId = randomUUID();
       const built = buildRooms(input.rooms);
       const cats = input.pets.filter((p) => p.species === "cat").length;

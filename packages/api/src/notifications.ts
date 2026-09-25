@@ -31,6 +31,7 @@ import {
   taskOverrides,
 } from "@ocafy/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { flag } from "./flags";
 import { loadPlanInput } from "./plan";
 import { type PushPayload, pushConfigured, sendPush } from "./push";
 
@@ -203,7 +204,7 @@ export async function runNotificationTick(
     duplicates: 0,
     noDevice: 0,
   };
-  if (!pushConfigured()) return summary;
+  if (!pushConfigured() || !(await flag("push_enabled", true))) return summary;
 
   const enabled = await db
     .select({

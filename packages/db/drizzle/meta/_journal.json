@@ -64,6 +64,20 @@
       "when": 1790296366497,
       "tag": "0008_mysterious_quicksilver",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790297329835,
+      "tag": "0009_yummy_kabuki",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790297478840,
+      "tag": "0010_dizzy_gorgon",
+      "breakpoints": true
     }
   ]
 }

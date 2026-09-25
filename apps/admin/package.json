@@ -1,0 +1,30 @@
+{
+  "name": "@ocafy/admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3300",
+    "build": "next build",
+    "start": "next start -p 3300",
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit",
+    "bootstrap": "node --env-file-if-exists=.env.local --import tsx scripts/bootstrap.ts"
+  },
+  "dependencies": {
+    "@neondatabase/auth": "latest",
+    "@ocafy/api": "workspace:*",
+    "@ocafy/core": "workspace:*",
+    "@ocafy/db": "workspace:*",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}

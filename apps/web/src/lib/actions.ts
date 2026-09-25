@@ -904,6 +904,40 @@ export function removeAbsence(id: string) {
   void mutate(() => trpc.agenda.removeAbsence.mutate({ id }));
 }
 
+/* ================= privacidade (LGPD) ================= */
+
+/** Baixa uma cópia dos meus dados (JSON) gerada no servidor. */
+export async function downloadMyData(): Promise<string> {
+  try {
+    const r = await mutateStrict(() => trpc.account.exportMyData.mutate());
+    const blob = new Blob([JSON.stringify(r.data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = r.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return "Cópia dos seus dados baixada.";
+  } catch (e) {
+    return errorMessage(e, "Não foi possível gerar a cópia agora.");
+  }
+}
+
+/** Pede a exclusão da conta e dos dados (a equipe confirma em até 15 dias). */
+export async function requestAccountDeletion(): Promise<string> {
+  try {
+    const r = await mutateStrict(() => trpc.account.requestDeletion.mutate({}));
+    const due = new Date(r.dueAt).toLocaleDateString("pt-BR");
+    return `Pedido registrado. Vamos concluir até ${due}.`;
+  } catch (e) {
+    return errorMessage(e, "Não foi possível registrar o pedido.");
+  }
+}
+
 /* ================= loja ================= */
 
 export function addReward(title: string, costCoins: number, icon: string) {

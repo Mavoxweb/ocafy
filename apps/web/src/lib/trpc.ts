@@ -28,6 +28,10 @@ export function errorMessage(e: unknown, fallback: string): string {
       ? Object.values(zod.fieldErrors).flat()[0]
       : undefined;
     if (first) return first;
+    if (e.message === "MAINTENANCE")
+      return "O Ocafy está em manutenção. Tente de novo em alguns minutos.";
+    if (e.message === "HOUSEHOLD_SUSPENDED")
+      return "Esta casa está suspensa. Fale com o suporte.";
     const limit = parsePlanLimit(e.message);
     if (limit) return limit.text;
     if (

@@ -666,3 +666,102 @@ export const billingEvents = pgTable(
     index("billing_events_received_idx").on(t.receivedAt),
   ],
 );
+
+/* ============ Administração da plataforma (app separado: apps/admin) ============ */
+
+/** Quem pode entrar no painel. Ninguém vira admin por engano: só por esta tabela. */
+export const platformStaff = pgTable("platform_staff", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Id do usuário no Neon Auth. */
+  userId: text("user_id").unique().notNull(),
+  email: text("email").notNull(),
+  role: text("role", {
+    enum: ["owner", "admin", "support", "finance", "viewer"],
+  }).notNull(),
+  /** Segredo TOTP cifrado (AES-256-GCM) — o segundo fator do painel. */
+  totpSecret: text("totp_secret").notNull(),
+  totpEnabledAt: timestamp("totp_enabled_at"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastLoginAt: timestamp("last_login_at"),
+  /** Último intervalo TOTP aceito: o mesmo código não vale duas vezes (anti-replay). */
+  lastTotpStep: bigint("last_totp_step", { mode: "number" }),
+});
+
+/** Registro IMUTÁVEL de toda ação administrativa (triggers impedem UPDATE/DELETE/TRUNCATE). */
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    actorEmail: text("actor_email").notNull(),
+    actorRole: text("actor_role").notNull(),
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id"),
+    householdId: text("household_id"),
+    /** Justificativa obrigatória escrita por quem agiu. */
+    reason: text("reason").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    ip: text("ip"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("admin_audit_created_idx").on(t.createdAt),
+    index("admin_audit_household_idx").on(t.householdId),
+  ],
+);
+
+/** Pedidos de titulares (LGPD): exportar ou excluir os dados. Prazo de 15 dias. */
+export const dataRequests = pgTable(
+  "data_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    householdId: uuid("household_id").references(() => households.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", { enum: ["export", "delete"] }).notNull(),
+    status: text("status", {
+      enum: ["open", "in_progress", "done", "rejected"],
+    })
+      .default("open")
+      .notNull(),
+    note: text("note"),
+    requestedAt: timestamp("requested_at").defaultNow().notNull(),
+    dueAt: timestamp("due_at").notNull(),
+    handledBy: text("handled_by"),
+    completedAt: timestamp("completed_at"),
+    /** O que foi feito (evidência para o titular e para auditoria). */
+    evidence: text("evidence"),
+  },
+  (t) => [
+    index("data_requests_status_idx").on(t.status, t.dueAt),
+    index("data_requests_user_idx").on(t.userId),
+  ],
+);
+
+/** Chaves liberar/bloquear recursos globais sem novo deploy (ex.: manutenção). */
+export const featureFlags = pgTable("feature_flags", {
+  key: text("key").primaryKey(),
+  enabled: boolean("enabled").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: text("updated_by"),
+});
+
+/** Anotações internas de suporte sobre uma casa. */
+export const supportNotes = pgTable(
+  "support_notes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    author: text("author").notNull(),
+    note: text("note").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("support_notes_household_idx").on(t.householdId)],
+);

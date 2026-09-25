@@ -6,8 +6,10 @@ import { Segmented } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
 import {
   deleteHousehold,
+  downloadMyData,
   removeMyAvatar,
   renameMe,
+  requestAccountDeletion,
   setMyAvatar,
 } from "@/lib/actions";
 import { authClient } from "@/lib/auth/client";
@@ -40,6 +42,8 @@ export function SettingsSheet() {
   const [busy, setBusy] = useState(false);
   const [cropFile, setCropFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [privacyMsg, setPrivacyMsg] = useState("");
+  const [confirmAccountDelete, setConfirmAccountDelete] = useState(false);
 
   async function signOut() {
     setBusy(true);
@@ -188,6 +192,49 @@ export function SettingsSheet() {
       <Link href="/lembretes" className="btn" onClick={closeSheet}>
         Configurar lembretes
       </Link>
+
+      <h4>Privacidade e dados</h4>
+      <p className="meta">
+        Seus dados são seus: baixe uma cópia ou peça a exclusão da conta.
+      </p>
+      <div className="frow">
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy}
+          onClick={async () => setPrivacyMsg(await downloadMyData())}
+        >
+          Baixar meus dados
+        </button>
+        {confirmAccountDelete ? (
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={busy}
+            onClick={async () => {
+              setPrivacyMsg(await requestAccountDeletion());
+              setConfirmAccountDelete(false);
+            }}
+          >
+            Confirmar pedido de exclusão
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="link"
+            onClick={() => setConfirmAccountDelete(true)}
+          >
+            Excluir minha conta
+          </button>
+        )}
+      </div>
+      {confirmAccountDelete && (
+        <p className="meta">
+          A conta e os seus dados serão apagados pela equipe em até 15 dias. Se
+          você é o(a) único(a) adulto(a) da casa, a casa inteira também.
+        </p>
+      )}
+      {privacyMsg && <output className="meta block">{privacyMsg}</output>}
 
       <h4>Método</h4>
       <button
