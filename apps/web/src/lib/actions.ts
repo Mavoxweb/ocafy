@@ -1,6 +1,11 @@
 "use client";
 
-import type { CompletionEntry } from "@ocafy/core";
+import {
+  type CompletionEntry,
+  type ShopCadence,
+  type ShopUrgency,
+  guessCategory,
+} from "@ocafy/core";
 import {
   INVENTORY_DEST,
   type InventoryDest,
@@ -32,7 +37,7 @@ import {
   taskTitle,
   xpOf,
 } from "./selectors";
-import { type AppState, store } from "./store";
+import { type AppState, type ShoppingItem, store } from "./store";
 import { mutate, mutateStrict, refresh } from "./sync";
 import { trpc } from "./trpc";
 import { closeSheet, toast } from "./ui";
@@ -667,6 +672,114 @@ export function respondTrade(id: string, accept: boolean) {
   }));
   void mutate(() => trpc.social.respondTrade.mutate({ id, accept }));
   toast(accept ? "Combinado! A tarefa fica com você." : "Pedido recusado.");
+}
+
+/* ================= compras ================= */
+
+export function addShopItem(
+  name: string,
+  urgency: ShopUrgency = "soon",
+  quantity = "",
+) {
+  const n = name.trim().slice(0, 60);
+  const me = currentMember(get());
+  if (!n || !me) return false;
+  const item = {
+    id: uid(),
+    name: n,
+    quantity: quantity.trim().slice(0, 24) || null,
+    category: guessCategory(n),
+    urgency,
+    status: "open" as const,
+    addedBy: me.id,
+    createdAt: new Date().toISOString(),
+  };
+  store.set((s) => ({
+    ...s,
+    shopping: { ...s.shopping, items: [...s.shopping.items, item] },
+  }));
+  void mutate(() =>
+    trpc.shopping.add.mutate({
+      id: item.id,
+      name: item.name,
+      ...(item.quantity ? { quantity: item.quantity } : {}),
+      urgency,
+    }),
+  );
+  return true;
+}
+
+const patchItem = (id: string, next: Partial<ShoppingItem>) =>
+  store.set((s) => ({
+    ...s,
+    shopping: {
+      ...s.shopping,
+      items: s.shopping.items.map((i) => (i.id === id ? { ...i, ...next } : i)),
+    },
+  }));
+
+export function setShopUrgency(id: string, urgency: ShopUrgency) {
+  patchItem(id, { urgency });
+  void mutate(() => trpc.shopping.update.mutate({ id, urgency }));
+}
+
+export function renameShopItem(id: string, name: string, quantity: string) {
+  const n = name.trim().slice(0, 60);
+  if (!n) return;
+  const q = quantity.trim().slice(0, 24) || null;
+  patchItem(id, { name: n, quantity: q });
+  void mutate(() =>
+    trpc.shopping.update.mutate({ id, name: n, quantity: q ?? "" }),
+  );
+}
+
+export function toggleBought(id: string) {
+  const it = get().shopping.items.find((i) => i.id === id);
+  if (!it) return;
+  const bought = it.status === "open";
+  patchItem(id, { status: bought ? "bought" : "open" });
+  void mutate(() => trpc.shopping.setBought.mutate({ id, bought }));
+  vibrate(8);
+}
+
+export function removeShopItem(id: string) {
+  store.set((s) => ({
+    ...s,
+    shopping: {
+      ...s.shopping,
+      items: s.shopping.items.filter((i) => i.id !== id),
+    },
+  }));
+  void mutate(() => trpc.shopping.remove.mutate({ id }));
+}
+
+/** "Terminei as compras": registra a ida e limpa o que foi comprado. */
+export function finishShopping() {
+  const bought = get().shopping.items.filter((i) => i.status === "bought");
+  if (!bought.length) {
+    toast("Marque o que você comprou primeiro.");
+    return;
+  }
+  store.set((s) => ({
+    ...s,
+    shopping: {
+      ...s.shopping,
+      items: s.shopping.items.filter((i) => i.status !== "bought"),
+      trips: [new Date().toISOString(), ...s.shopping.trips].slice(0, 12),
+    },
+  }));
+  void mutate(() => trpc.shopping.finishTrip.mutate());
+  toast(
+    `Compras registradas: ${bought.length} ${bought.length === 1 ? "item" : "itens"}.`,
+  );
+}
+
+export function setShopHabit(cadence: ShopCadence | null, day: number | null) {
+  store.set((s) => ({
+    ...s,
+    shopping: { ...s.shopping, cadence, day: cadence ? day : null },
+  }));
+  void mutate(() => trpc.shopping.setHabit.mutate({ cadence, day }));
 }
 
 /* ================= loja ================= */

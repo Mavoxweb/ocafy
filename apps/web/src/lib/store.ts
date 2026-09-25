@@ -9,6 +9,8 @@ import {
   type MemberSlot,
   type Pet,
   type RoomInstance,
+  type ShopCadence,
+  type ShopUrgency,
   defaultRoomCounts,
   roomsFromCounts,
 } from "@ocafy/core";
@@ -101,6 +103,25 @@ export interface TaskOverride {
   off?: boolean;
 }
 
+export interface ShoppingItem {
+  id: string;
+  name: string;
+  quantity: string | null;
+  category: string;
+  urgency: ShopUrgency;
+  status: "open" | "bought";
+  addedBy: string | null;
+  createdAt: string;
+}
+
+export interface ShoppingState {
+  items: ShoppingItem[];
+  cadence: ShopCadence | null;
+  day: number | null;
+  /** Últimas idas ao mercado (ISO, mais recente primeiro). */
+  trips: string[];
+}
+
 export type LoadStatus = "loading" | "anon" | "nohousehold" | "ready" | "error";
 
 export interface AppState {
@@ -122,6 +143,7 @@ export interface AppState {
   completions: CompletionEntry[];
   meals: MealRecord[];
   office: OfficeState;
+  shopping: ShoppingState;
   rewards: Reward[];
   purchases: Purchase[];
   reactions: Reaction[];
@@ -154,6 +176,7 @@ export const EMPTY_STATE: AppState = {
   completions: [],
   meals: [],
   office: { start: null, done: {}, steps: {}, inventory: [] },
+  shopping: { items: [], cadence: null, day: null, trips: [] },
   rewards: [],
   purchases: [],
   reactions: [],

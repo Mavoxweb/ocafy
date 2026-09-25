@@ -176,6 +176,13 @@ export const NAV_ICONS = {
   ),
   cozinha: ROOM_PATHS.cozinha,
   gatos: ROOM_PATHS.pets,
+  compras: (
+    <>
+      <path d="M3 4h2.4l2 10.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L20 8H6.2" />
+      <circle cx="9.5" cy="19" r="1.4" />
+      <circle cx="17" cy="19" r="1.4" />
+    </>
+  ),
   loja: (
     <>
       <path d="M4 8h16l-1.2 11a1 1 0 0 1-1 .9H6.2a1 1 0 0 1-1-.9z" />

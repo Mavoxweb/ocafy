@@ -4,3 +4,4 @@ export * from "./domain";
 export * from "./profile";
 export * from "./library";
 export * from "./planner";
+export * from "./shopping";

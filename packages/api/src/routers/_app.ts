@@ -4,6 +4,7 @@ import { litterRouter } from "./litter";
 import { mealsRouter } from "./meals";
 import { membersRouter } from "./members";
 import { officeRouter } from "./office";
+import { shoppingRouter } from "./shopping";
 import { socialRouter } from "./social";
 import { storeRouter } from "./store";
 import { tasksRouter } from "./tasks";
@@ -20,6 +21,7 @@ export const appRouter = router({
   members: membersRouter,
   office: officeRouter,
   store: storeRouter,
+  shopping: shoppingRouter,
   social: socialRouter,
 });
 

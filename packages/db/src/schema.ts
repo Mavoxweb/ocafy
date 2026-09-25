@@ -47,6 +47,14 @@ export const households = pgTable("households", {
   hasPlants: boolean("has_plants").default(false).notNull(),
   hasCar: boolean("has_car").default(false).notNull(),
   officeProject: boolean("office_project").default(false).notNull(),
+  /** Fuso da casa (lembretes e "hoje" usam este fuso). */
+  timezone: text("timezone").default("America/Sao_Paulo").notNull(),
+  /** Hábito de compra: a cada quanto tempo vão ao mercado (null = não informado). */
+  shopCadence: text("shop_cadence", {
+    enum: ["weekly", "biweekly", "monthly"],
+  }),
+  /** Dia da semana preferido para as compras (0 = domingo). */
+  shopDay: integer("shop_day"),
   onboardedAt: timestamp("onboarded_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -406,4 +414,51 @@ export const rewardPurchases = pgTable(
     resolvedAt: timestamp("resolved_at"),
   },
   (t) => [index("purchases_household_idx").on(t.householdId)],
+);
+
+/** Lista de compras compartilhada da casa. */
+export const shoppingItems = pgTable(
+  "shopping_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    quantity: text("quantity"),
+    category: text("category"),
+    /** now = acabou/urgente; soon = próxima ida; later = quando der. */
+    urgency: text("urgency", { enum: ["now", "soon", "later"] })
+      .default("soon")
+      .notNull(),
+    status: text("status", { enum: ["open", "bought"] })
+      .default("open")
+      .notNull(),
+    addedBy: uuid("added_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    boughtBy: uuid("bought_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    boughtAt: timestamp("bought_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("shopping_items_household_idx").on(t.householdId, t.status)],
+);
+
+/** Cada ida ao mercado concluída: alimenta o hábito de compra da casa. */
+export const shoppingTrips = pgTable(
+  "shopping_trips",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    doneBy: uuid("done_by").references(() => householdMembers.id, {
+      onDelete: "set null",
+    }),
+    itemsCount: integer("items_count").default(0).notNull(),
+    doneAt: timestamp("done_at").defaultNow().notNull(),
+  },
+  (t) => [index("shopping_trips_household_idx").on(t.householdId, t.doneAt)],
 );

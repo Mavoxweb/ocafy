@@ -950,6 +950,83 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     await a2.social.respondTrade({ id: t.id, accept: true });
   });
 
+  it("compras: lista compartilhada, urgência, modo mercado e hábito", async () => {
+    const owner = await newHouse("Casa Compras", null);
+    const { code: inviteCode } = await owner.c.household.createInvite();
+    const partner = as(`test-${randomUUID()}`);
+    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+
+    const leite = await owner.c.shopping.add({
+      name: "Leite",
+      quantity: "6 caixas",
+      urgency: "now",
+    });
+    await partner.shopping.add({ name: "Tomate" });
+    const areia = await partner.shopping.add({
+      name: "Areia para gato",
+      urgency: "later",
+    });
+
+    let snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const byName = Object.fromEntries(
+      snap.data.shopping.items.map((i) => [i.name, i]),
+    );
+    expect(byName.Leite).toMatchObject({
+      urgency: "now",
+      quantity: "6 caixas",
+      category: "Laticínios e frios",
+      status: "open",
+    });
+    expect(byName.Tomate).toMatchObject({
+      urgency: "soon",
+      category: "Hortifruti",
+    });
+    expect(byName["Areia para gato"].category).toBe("Pets");
+
+    // qualquer adulto edita; itens de outra casa ficam intocados
+    await partner.shopping.update({ id: leite.id, urgency: "soon" });
+    const other = await newHouse("Casa Alheia Compras", null);
+    await other.c.shopping.update({ id: leite.id, name: "Invadido" });
+    await other.c.shopping.remove({ id: leite.id });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(
+      snap.data.shopping.items.find((i) => i.id === leite.id),
+    ).toMatchObject({
+      name: "Leite",
+      urgency: "soon",
+    });
+
+    // sem nada comprado não dá para fechar a ida
+    expect(await code(() => owner.c.shopping.finishTrip())).toBe("BAD_REQUEST");
+    await owner.c.shopping.setBought({ id: leite.id, bought: true });
+    await owner.c.shopping.setBought({ id: areia.id, bought: true });
+    await owner.c.shopping.setBought({ id: areia.id, bought: false });
+    const done = await owner.c.shopping.finishTrip();
+    expect(done.items).toBe(1);
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.shopping.items.map((i) => i.name).sort()).toEqual([
+      "Areia para gato",
+      "Tomate",
+    ]);
+    expect(snap.data.shopping.trips).toHaveLength(1);
+
+    // hábito de compra
+    await owner.c.shopping.setHabit({ cadence: "weekly", day: 6 });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.shopping).toMatchObject({ cadence: "weekly", day: 6 });
+    await owner.c.shopping.setHabit({ cadence: null, day: 3 });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.shopping).toMatchObject({ cadence: null, day: null });
+    expect(await code(() => owner.c.shopping.add({ name: "   " }))).toBe(
+      "BAD_REQUEST",
+    );
+  });
+
   it("apagar a casa remove tudo em cascata", async () => {
     const { c, householdId } = await newHouse("Casa Efêmera");
     await c.tasks.complete({ taskKey: "lixo", ...completion() });

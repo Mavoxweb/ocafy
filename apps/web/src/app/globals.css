@@ -2205,3 +2205,60 @@ input[type="range"] {
 .xpbar.h i {
   background: #4cc2b0;
 }
+
+/* compras */
+.urg {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  font-weight: 800;
+  display: inline-grid;
+  place-items: center;
+  background: var(--soft);
+  color: var(--muted);
+}
+.urg-now {
+  background: color-mix(in srgb, var(--late) 22%, var(--card));
+  color: var(--late-t);
+}
+.urg-soon {
+  background: color-mix(in srgb, var(--due) 22%, var(--card));
+  color: var(--due-t);
+}
+.market-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 12px 14px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+.market-row .box {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.market-row .tt {
+  flex: 1;
+  font-weight: 600;
+}
+.market-row.done .tt {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.market-row.done .box {
+  background: var(--fresh);
+  border-color: var(--fresh);
+  color: #fff;
+}

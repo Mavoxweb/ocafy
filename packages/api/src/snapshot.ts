@@ -4,6 +4,8 @@ import type {
   LitterSettings,
   Pet,
   RoomInstance,
+  ShopCadence,
+  ShopUrgency,
 } from "@ocafy/core";
 import {
   completionReactions,
@@ -21,12 +23,14 @@ import {
   pets,
   rewardPurchases,
   rooms,
+  shoppingItems,
+  shoppingTrips,
   storeRewards,
   taskAssignments,
   taskOverrides,
   taskTrades,
 } from "@ocafy/db";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { petOf, profileOf, roomsOf } from "./plan";
 
 /**
@@ -115,6 +119,23 @@ export interface Snapshot {
     createdAt: string;
     resolvedAt?: string;
   }[];
+  /** Lista de compras e hábito de compra. */
+  shopping: {
+    items: {
+      id: string;
+      name: string;
+      quantity: string | null;
+      category: string;
+      urgency: ShopUrgency;
+      status: "open" | "bought";
+      addedBy: string | null;
+      createdAt: string;
+    }[];
+    cadence: ShopCadence | null;
+    day: number | null;
+    /** Últimas idas ao mercado (ISO, mais recente primeiro). */
+    trips: string[];
+  };
   /** Convite ativo (só aparece enquanto a casa tem menos de 2 membros). */
   invite: { code: string; expiresAt: string } | null;
 }
@@ -148,6 +169,8 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     tradeRows,
     inviteRows,
     assignmentRows,
+    shopItemRows,
+    shopTripRows,
   ] = await db.batch([
     db
       .select({
@@ -197,6 +220,13 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       .select()
       .from(taskAssignments)
       .where(eq(taskAssignments.householdId, hid)),
+    db.select().from(shoppingItems).where(eq(shoppingItems.householdId, hid)),
+    db
+      .select({ doneAt: shoppingTrips.doneAt })
+      .from(shoppingTrips)
+      .where(eq(shoppingTrips.householdId, hid))
+      .orderBy(desc(shoppingTrips.doneAt))
+      .limit(12),
   ]);
 
   const member = memberRows.find((m) => m.userId === userId);
@@ -322,6 +352,21 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       createdAt: iso(t.createdAt),
       ...(t.resolvedAt ? { resolvedAt: iso(t.resolvedAt) } : {}),
     })),
+    shopping: {
+      items: shopItemRows.map((i) => ({
+        id: i.id,
+        name: i.name,
+        quantity: i.quantity,
+        category: i.category ?? "Outros",
+        urgency: i.urgency,
+        status: i.status,
+        addedBy: i.addedBy,
+        createdAt: iso(i.createdAt),
+      })),
+      cadence: household.shopCadence,
+      day: household.shopDay,
+      trips: shopTripRows.map((t) => iso(t.doneAt)),
+    },
     invite: invite
       ? { code: invite.code, expiresAt: iso(invite.expiresAt) }
       : null,

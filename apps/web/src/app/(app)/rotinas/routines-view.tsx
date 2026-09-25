@@ -11,12 +11,14 @@ import {
 import { WEEKDAYS, capitalize } from "@/lib/dates";
 import {
   type Task,
+  hasPetOf,
   isOff,
   minMax,
   recurringInHouse,
   roomGroups,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -65,6 +67,11 @@ export function RoutinesView() {
           ))}
         </Chips>
       </div>
+      {room === "pets" && hasPetOf(s, "cat") && (
+        <Link href="/gatos" className="btn btn-small mt-3">
+          Abrir caixa de areia e estoque
+        </Link>
+      )}
       <div className="mt-3">
         <Segmented
           label="Visualização"

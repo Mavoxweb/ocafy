@@ -43,6 +43,13 @@
       "when": 1790293546354,
       "tag": "0005_legal_stephen_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790294540716,
+      "tag": "0006_thin_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }

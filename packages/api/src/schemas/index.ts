@@ -100,6 +100,27 @@ export const memberProfileSchema = z.object({
   ageBand: z.enum(["child_4_6", "child_7_9", "child_10_12", "teen_13_17"]),
 });
 
+export const shoppingItemSchema = z.object({
+  id: uuid.optional(),
+  name: z.string().trim().min(1, "Digite o item").max(60),
+  quantity: z.string().trim().max(24).optional(),
+  category: z
+    .enum([
+      "Hortifruti",
+      "Açougue e peixaria",
+      "Padaria",
+      "Laticínios e frios",
+      "Mercearia",
+      "Bebidas",
+      "Limpeza",
+      "Higiene",
+      "Pets",
+      "Outros",
+    ])
+    .optional(),
+  urgency: z.enum(["now", "soon", "later"]).optional(),
+});
+
 export const joinSchema = z.object({
   code: z.string().trim().min(4).max(16),
   memberName: z.string().trim().min(2, "Seu nome é obrigatório").max(24),
