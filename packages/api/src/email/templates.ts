@@ -84,7 +84,7 @@ export function paymentFailedEmail(opts: {
   return {
     subject: last
       ? `Último aviso: o Plus da casa “${opts.houseName}” termina amanhã`
-      : `Não conseguimos cobrar sua assinatura do Ocafy`,
+      : "Não conseguimos cobrar sua assinatura do Ocafy",
     html: layout(
       last ? "Seu Plus termina amanhã" : "Pagamento não realizado",
       `<p style="line-height:1.5">Não conseguimos processar o pagamento da assinatura Plus da casa <b>${esc(opts.houseName)}</b>.</p>
