@@ -1,5 +1,6 @@
 import { RECURRING_TASKS, ROUTINE_TASKS } from "./catalog";
 import type {
+  AgeBand,
   DogSize,
   Dwelling,
   HouseMode,
@@ -34,6 +35,8 @@ export interface Condition {
   mode?: HouseMode[];
   hasRoom?: RoomKind;
   hasPet?: PetSpecies;
+  /** Há ao menos uma criança com esta faixa etária ou mais. */
+  kidMin?: AgeBand;
   flag?: HouseFlag;
   /** Avaliado sobre o pet da instância (escopo "pet"). */
   petSize?: DogSize[];
@@ -66,6 +69,8 @@ export interface TaskTemplate {
   group?: "casa" | "pets";
   when?: Condition;
   level: TaskLevel;
+  /** Faixa etária a partir da qual uma criança pode fazer a tarefa (ajuda a sugerir quem faz). */
+  suitableFrom?: AgeBand;
 }
 
 type Meta = Partial<
@@ -133,7 +138,7 @@ const LEGACY: Record<string, Meta> = {
     },
   ),
   roupa_b: house("core", {
-    all: [{ flag: "hasWasher" }, { mode: ["couple"] }],
+    all: [{ flag: "hasWasher" }, { mode: ["couple", "family"] }],
   }),
   toalhas: house("core", { flag: "hasWasher" }),
   cama: room("quarto", "all"),
@@ -839,7 +844,132 @@ const NEW_TEMPLATES: TaskTemplate[] = [
   },
 ];
 
-export const LIBRARY: TaskTemplate[] = [...fromLegacy(), ...NEW_TEMPLATES];
+/** Tarefas para crianças: só entram quando a casa tem perfis de criança. */
+const KID_TEMPLATES: TaskTemplate[] = [
+  {
+    id: "kid_brinquedos",
+    kind: "routine",
+    block: "noite",
+    title: "Guardar os brinquedos",
+    cat: "organizacao",
+    mins: 5,
+    min: 1,
+    max: 1,
+    scope: "household",
+    when: { kidMin: "child_4_6" },
+    level: "core",
+    suitableFrom: "child_4_6",
+    how: "Uma caixa para cada tipo de brinquedo ajuda os pequenos a se organizarem sozinhos.",
+  },
+  {
+    id: "kid_cesto",
+    kind: "routine",
+    block: "noite",
+    title: "Colocar a roupa suja no cesto",
+    cat: "roupa",
+    mins: 2,
+    min: 1,
+    max: 1,
+    scope: "household",
+    when: { kidMin: "child_4_6" },
+    level: "core",
+    suitableFrom: "child_4_6",
+    how: "Deixe o cesto no quarto, na altura da criança.",
+  },
+  {
+    id: "kid_mochila",
+    kind: "routine",
+    block: "noite",
+    title: "Arrumar a mochila para o dia seguinte",
+    cat: "organizacao",
+    mins: 5,
+    min: 1,
+    max: 1,
+    scope: "household",
+    when: { kidMin: "child_7_9" },
+    level: "standard",
+    suitableFrom: "child_7_9",
+    how: "Um checklist colado na porta do quarto evita esquecimentos.",
+  },
+  {
+    id: "kid_mesa",
+    kind: "routine",
+    block: "noite",
+    title: "Ajudar a pôr e tirar a mesa",
+    cat: "cozinha",
+    mins: 6,
+    min: 1,
+    max: 1,
+    scope: "household",
+    when: { kidMin: "child_7_9" },
+    level: "standard",
+    suitableFrom: "child_7_9",
+    how: "Comece pelos itens que não quebram e vá aumentando a responsabilidade.",
+  },
+  {
+    id: "kid_quarto",
+    kind: "recurring",
+    title: "Arrumar o próprio quarto",
+    cat: "organizacao",
+    mins: 20,
+    min: 3,
+    max: 7,
+    scope: "household",
+    when: { kidMin: "child_10_12" },
+    level: "standard",
+    suitableFrom: "child_10_12",
+    how: "Guardar o que está fora do lugar, arrumar a cama e separar o que precisa ir para a lavanderia.",
+  },
+  {
+    id: "kid_banheiro",
+    kind: "recurring",
+    title: "Limpar a pia e o espelho do banheiro",
+    cat: "limpeza",
+    mins: 10,
+    min: 7,
+    max: 10,
+    scope: "household",
+    when: { kidMin: "teen_13_17" },
+    level: "standard",
+    suitableFrom: "teen_13_17",
+    how: "Use produto suave e pano limpo; luvas ajudam.",
+  },
+];
+
+/** A partir de qual faixa uma criança pode fazer cada tarefa já existente. */
+const SUITABLE: Record<string, AgeBand> = {
+  m_cama: "child_4_6",
+  n_roupas: "child_4_6",
+  plants_water: "child_4_6",
+  m_gatos: "child_7_9",
+  potes_gatos: "child_7_9",
+  lixo: "child_7_9",
+  dog_feed_am: "child_7_9",
+  dog_feed_pm: "child_7_9",
+  dog_bowls: "child_7_9",
+  m_louca: "child_10_12",
+  n_louca: "child_10_12",
+  n_bancada: "child_10_12",
+  n_reset: "child_10_12",
+  aspirar: "child_10_12",
+  m_areia: "child_10_12",
+  n_areia: "child_10_12",
+  dog_play: "child_7_9",
+  dog_walk_am: "teen_13_17",
+  dog_walk_pm: "teen_13_17",
+  banheiro_rapido: "teen_13_17",
+  toalhas: "teen_13_17",
+};
+
+export const LIBRARY: TaskTemplate[] = [
+  ...fromLegacy(),
+  ...NEW_TEMPLATES,
+  ...KID_TEMPLATES,
+].map((t) =>
+  SUITABLE[t.id] && !t.suitableFrom
+    ? { ...t, suitableFrom: SUITABLE[t.id] }
+    : t,
+);
 
 export const LIBRARY_BY_ID: Record<string, TaskTemplate> = Object.fromEntries(
   LIBRARY.map((t) => [t.id, t]),

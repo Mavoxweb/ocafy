@@ -1,6 +1,8 @@
 import {
   type Achievement,
+  type AgeBand,
   type CompletionEntry,
+  type Kid,
   type LevelInfo,
   type Meal,
   PROTEIN_MAP,
@@ -9,6 +11,7 @@ import {
   ROOM_NAMES,
   type RoomKind,
   type TaskStatusState,
+  ageAtLeast,
   bagsPerLitterChange,
   calculateDefrostAlert,
   calculateLevel,
@@ -24,7 +27,7 @@ import {
 } from "@ocafy/core";
 import { OFFICE_GOALS } from "./catalog";
 import { addDays, dayKey, fmtTime, fromKey, mondayKey, relDay } from "./dates";
-import type { AppState, MealRecord, Member } from "./store";
+import type { AppState, MealRecord, Member, Slot } from "./store";
 
 /* ================= derivados em cache ================= */
 
@@ -70,10 +73,45 @@ export const memberName = (s: AppState, id: string | null | undefined) =>
 export const currentMember = (s: AppState): Member | undefined =>
   memberById(s, s.meId) ?? s.members[0];
 
-export const partnerOf = (s: AppState, id: string | null | undefined) =>
-  s.members.find((m) => m.id !== id);
+/** Adultos com conta (quem pode aprovar, trocar tarefas e entrar por convite). */
+export const adultsOf = (s: AppState): Member[] =>
+  s.members.filter((m) => m.kind === "account");
 
-export const memberBySlot = (s: AppState, slot: "a" | "b") =>
+/** Perfis de criança. */
+export const childrenOf = (s: AppState): Member[] =>
+  s.members.filter((m) => m.kind === "profile");
+
+export const kidsOf = (s: AppState): Kid[] =>
+  childrenOf(s)
+    .filter((m): m is Member & { ageBand: AgeBand } => !!m.ageBand)
+    .map((m) => ({ id: m.id, ageBand: m.ageBand }));
+
+/** Outros adultos da casa (nunca crianças). */
+export const otherAdults = (
+  s: AppState,
+  id: string | null | undefined,
+): Member[] => adultsOf(s).filter((m) => m.id !== id);
+
+/** A outra pessoa da casa (no modo Casal). Com vários adultos, o primeiro. */
+export const partnerOf = (s: AppState, id: string | null | undefined) =>
+  otherAdults(s, id)[0];
+
+/** Quem cuida da tarefa (se alguém foi atribuído). */
+export const assigneeOf = (s: AppState, taskId: string): Member | undefined => {
+  const id = s.assignments[taskId];
+  return id ? memberById(s, id) : undefined;
+};
+
+/** A criança tem idade para a tarefa? (adultos sempre podem) */
+export const suitableFor = (t: Task, m: Member): boolean =>
+  m.kind === "account" ||
+  !t.suitableFrom ||
+  (!!m.ageBand && ageAtLeast(m.ageBand, t.suitableFrom));
+
+/** Máximo de adultos com conta que o modo permite. */
+export const ADULT_LIMIT = { solo: 1, couple: 2, family: 4 } as const;
+
+export const memberBySlot = (s: AppState, slot: Slot) =>
   s.members.find((m) => m.slot === slot);
 
 /* ================= tarefas ================= */
@@ -99,12 +137,14 @@ let lastPlan: Plan | null = null;
 export function planOf(s: AppState): Plan {
   const hit = planCache.get(s);
   if (hit) return hit;
-  const key = JSON.stringify([s.profile, s.rooms, s.pets]);
+  const kids = kidsOf(s);
+  const key = JSON.stringify([s.profile, s.rooms, s.pets, kids]);
   if (!lastPlan || key !== lastPlanKey) {
     const list = generatePlan({
       profile: s.profile,
       rooms: s.rooms,
       pets: s.pets,
+      kids,
     });
     lastPlan = {
       list,

@@ -35,6 +35,8 @@ function fromSnapshot(d: Snapshot): AppState {
       id: m.id,
       name: m.name,
       slot: m.slot,
+      kind: m.kind,
+      ageBand: m.ageBand,
       avatar: m.avatarVersion
         ? `/api/avatar/${m.id}?v=${m.avatarVersion}`
         : null,
@@ -48,6 +50,7 @@ function fromSnapshot(d: Snapshot): AppState {
     litter: d.litter,
     litterStock: d.litterStock,
     overrides: d.overrides,
+    assignments: d.assignments,
     completions: d.completions,
     meals: d.meals,
     office: d.office,

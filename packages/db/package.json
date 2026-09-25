@@ -8,7 +8,7 @@
     "build": "tsc",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "drizzle-kit generate && biome check --write drizzle src",
     "db:migrate": "node --env-file-if-exists=../../apps/web/.env.local ./node_modules/drizzle-kit/bin.cjs migrate"
   },
   "dependencies": {

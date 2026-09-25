@@ -1,8 +1,9 @@
 "use client";
 
-import { NumberInput, StatusPill } from "@/components/ui/primitives";
+import { Chip, NumberInput, StatusPill } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
 import {
+  assignTask,
   completeTask,
   requestTrade,
   setFrequency,
@@ -11,32 +12,38 @@ import {
 import { WEEKDAYS, addDays, dayKey, daysAgoPhrase, fromKey } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
+  assigneeOf,
   currentMember,
   isOff,
   isRecurring,
   memberName,
-  partnerOf,
+  otherAdults,
   statusLabel,
+  suitableFor,
   taskOf,
   taskStatus,
   taskTitle,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { closeSheet } from "@/lib/ui";
-import { useRef } from "react";
+import { AGE_BANDS } from "@ocafy/core";
+import { useRef, useState } from "react";
 
 export function TaskSheet({ id }: { id: string }) {
   const s = useAppState();
   const now = useNow();
   const dateRef = useRef<HTMLInputElement>(null);
   const t = taskOf(s, id);
+  // "Quem fez?": padrão = quem cuida da tarefa se for criança, senão eu.
+  const [whoKid, setWhoKid] = useState<string | null>(null);
   if (!t) return null;
 
   const st = taskStatus(s, t, now);
   const off = isOff(s, t);
   const yesterday = dayKey(addDays(now, -1));
   const me = currentMember(s);
-  const partner = partnerOf(s, me?.id);
+  const adults = otherAdults(s, me?.id);
+  const assignee = assigneeOf(s, id);
   const when =
     st.state === "nunca" || !st.last || st.d == null
       ? "Ainda sem registro"
@@ -46,6 +53,9 @@ export function TaskSheet({ id }: { id: string }) {
     (x) => x.taskId === id && x.status === "pending",
   );
 
+  const kids = s.members.filter((m) => m.kind === "profile");
+  const kidFor = whoKid ?? (assignee?.kind === "profile" ? assignee.id : null);
+
   const doneAt = () => {
     const v = dateRef.current?.value;
     if (!v) return;
@@ -53,7 +63,7 @@ export function TaskSheet({ id }: { id: string }) {
     const today = dayKey(now) === v;
     d.setHours(today ? now.getHours() : 12, today ? now.getMinutes() : 0);
     closeSheet();
-    completeTask(id, { at: d });
+    completeTask(id, { at: d, ...(kidFor ? { forMemberId: kidFor } : {}) });
   };
 
   return (
@@ -72,13 +82,35 @@ export function TaskSheet({ id }: { id: string }) {
           <p>{how}</p>
         </div>
       )}
+      {kids.length > 0 && (
+        <div className="mt-2.5">
+          <div className="qlabel">Quem fez?</div>
+          <div className="chips wrap">
+            <Chip pressed={!kidFor} onClick={() => setWhoKid("")}>
+              Eu
+            </Chip>
+            {kids.map((k) => (
+              <Chip
+                key={k.id}
+                pressed={kidFor === k.id}
+                onClick={() => setWhoKid(k.id)}
+              >
+                {k.name}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
       <button
         type="button"
         className="btn btn-primary btn-block"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           closeSheet();
-          completeTask(id, { rect });
+          completeTask(id, {
+            rect,
+            ...(kidFor ? { forMemberId: kidFor } : {}),
+          });
         }}
       >
         Marcar como feito
@@ -116,6 +148,41 @@ export function TaskSheet({ id }: { id: string }) {
           </>
         ))}
 
+      {s.members.length > 1 && (
+        <>
+          <h4>Quem cuida desta tarefa?</h4>
+          <div className="chips wrap">
+            <Chip pressed={!assignee} onClick={() => assignTask(id, null)}>
+              Ninguém fixo
+            </Chip>
+            {s.members.map((m) => {
+              const ok = suitableFor(t, m);
+              return (
+                <Chip
+                  key={m.id}
+                  pressed={assignee?.id === m.id}
+                  onClick={() => assignTask(id, m.id)}
+                >
+                  {m.name}
+                  {!ok && (
+                    <small className="text-muted">
+                      {" "}
+                      · a partir de{" "}
+                      {t.suitableFrom ? AGE_BANDS[t.suitableFrom].label : ""}
+                    </small>
+                  )}
+                </Chip>
+              );
+            })}
+          </div>
+          {t.suitableFrom && (
+            <p className="meta">
+              Sugestão: crianças a partir de {AGE_BANDS[t.suitableFrom].label}.
+            </p>
+          )}
+        </>
+      )}
+
       <h4>Fez em outro dia?</h4>
       <div className="frow">
         <input
@@ -131,18 +198,21 @@ export function TaskSheet({ id }: { id: string }) {
       </div>
 
       <div className="mt-2 flex flex-wrap gap-x-5">
-        {partner && (
+        {adults.map((a) => (
           <button
+            key={a.id}
             type="button"
             className="link"
             disabled={pendingTrade}
-            onClick={() => requestTrade(id)}
+            onClick={() =>
+              requestTrade(id, adults.length > 1 ? a.id : undefined)
+            }
           >
             {pendingTrade
-              ? `Pedido já enviado para ${partner.name}`
-              : `Pedir para ${partner.name} fazer`}
+              ? `Pedido já enviado${adults.length > 1 ? "" : ` para ${a.name}`}`
+              : `Pedir para ${a.name} fazer`}
           </button>
-        )}
+        ))}
         {isRecurring(t) && (
           <button
             type="button"

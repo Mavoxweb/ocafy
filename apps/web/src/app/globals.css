@@ -1966,7 +1966,7 @@ input[type="range"] {
 .int-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 .int-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2124,4 +2124,84 @@ input[type="range"] {
   justify-items: center;
   margin-top: 16px;
   padding: 10px 0;
+}
+
+/* pessoas 3 a 8 (família): uma cor por slot */
+.sc-c {
+  --sc: #f6a94f;
+}
+.sc-d {
+  --sc: #9b86e6;
+}
+.sc-e {
+  --sc: #5aaee6;
+}
+.sc-f {
+  --sc: #e6c440;
+}
+.sc-g {
+  --sc: #ee7f6b;
+}
+.sc-h {
+  --sc: #4cc2b0;
+}
+
+.pav.c,
+.tag.c,
+.pc {
+  background: color-mix(in srgb, #f6a94f 26%, var(--card));
+  color: color-mix(in srgb, #f6a94f 55%, var(--ink));
+}
+.xpbar.c i {
+  background: #f6a94f;
+}
+
+.pav.d,
+.tag.d,
+.pd {
+  background: color-mix(in srgb, #9b86e6 26%, var(--card));
+  color: color-mix(in srgb, #9b86e6 55%, var(--ink));
+}
+.xpbar.d i {
+  background: #9b86e6;
+}
+
+.pav.e,
+.tag.e,
+.pe {
+  background: color-mix(in srgb, #5aaee6 26%, var(--card));
+  color: color-mix(in srgb, #5aaee6 55%, var(--ink));
+}
+.xpbar.e i {
+  background: #5aaee6;
+}
+
+.pav.f,
+.tag.f,
+.pf {
+  background: color-mix(in srgb, #e6c440 26%, var(--card));
+  color: color-mix(in srgb, #e6c440 55%, var(--ink));
+}
+.xpbar.f i {
+  background: #e6c440;
+}
+
+.pav.g,
+.tag.g,
+.pg {
+  background: color-mix(in srgb, #ee7f6b 26%, var(--card));
+  color: color-mix(in srgb, #ee7f6b 55%, var(--ink));
+}
+.xpbar.g i {
+  background: #ee7f6b;
+}
+
+.pav.h,
+.tag.h,
+.ph {
+  background: color-mix(in srgb, #4cc2b0 26%, var(--card));
+  color: color-mix(in srgb, #4cc2b0 55%, var(--ink));
+}
+.xpbar.h i {
+  background: #4cc2b0;
 }

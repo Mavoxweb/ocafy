@@ -7,13 +7,16 @@ import {
   type TaskTemplate,
 } from "./library";
 import type {
+  AgeBand,
   Dwelling,
   HouseProfile,
   Intensity,
+  Kid,
   Pet,
   RoomInstance,
   RoomKind,
 } from "./profile";
+import { ageAtLeast } from "./profile";
 import type { TaskCategory } from "./types";
 
 /**
@@ -30,6 +33,8 @@ export interface PlanInput {
   profile: HouseProfile;
   rooms: RoomInstance[];
   pets: Pet[];
+  /** Crianças da casa (perfis sem login): ativam tarefas por idade. */
+  kids?: Kid[];
 }
 
 export interface PlannedTask {
@@ -54,6 +59,8 @@ export interface PlannedTask {
   day?: number;
   how: string;
   level: TaskLevel;
+  /** Faixa etária mínima sugerida para uma criança fazer a tarefa. */
+  suitableFrom?: AgeBand;
 }
 
 const LEVEL_RANK: Record<TaskLevel, number> = {
@@ -76,6 +83,7 @@ interface Ctx {
   profile: HouseProfile;
   rooms: RoomInstance[];
   pets: Pet[];
+  kids: Kid[];
   pet?: Pet;
 }
 
@@ -89,6 +97,11 @@ export function evalCondition(c: Condition | undefined, ctx: Ctx): boolean {
   if (c.mode && !c.mode.includes(ctx.profile.mode)) return false;
   if (c.hasRoom && !ctx.rooms.some((r) => r.kind === c.hasRoom)) return false;
   if (c.hasPet && !ctx.pets.some((p) => p.species === c.hasPet)) return false;
+  if (
+    c.kidMin &&
+    !ctx.kids.some((k) => ageAtLeast(k.ageBand, c.kidMin as AgeBand))
+  )
+    return false;
   if (c.flag && !ctx.profile[c.flag]) return false;
   if (c.petSize && !(ctx.pet?.size && c.petSize.includes(ctx.pet.size)))
     return false;
@@ -128,7 +141,7 @@ export function generatePlan(
 ): PlannedTask[] {
   const { profile } = input;
   const rooms = [...input.rooms].sort((a, b) => a.position - b.position);
-  const base = { profile, rooms, pets: input.pets };
+  const base = { profile, rooms, pets: input.pets, kids: input.kids ?? [] };
   const maxRank = INTENSITY_MAX_LEVEL[profile.intensity];
   const factor = INTENSITY_FACTOR[profile.intensity];
   const out: PlannedTask[] = [];
@@ -193,6 +206,7 @@ export function generatePlan(
         ...(tpl.day != null ? { day: tpl.day } : {}),
         how: tpl.how,
         level: tpl.level,
+        ...(tpl.suitableFrom ? { suitableFrom: tpl.suitableFrom } : {}),
       });
     };
 

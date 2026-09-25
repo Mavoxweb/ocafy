@@ -7,8 +7,10 @@ import {
 import {
   completions,
   db,
+  householdMembers,
   litterSettings,
   officeGoals,
+  taskAssignments,
   taskOverrides,
 } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
@@ -16,6 +18,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { z } from "zod";
 import { loadPlan } from "../plan";
+import { assertProfileOfHousehold } from "../roster";
 import { completeTaskSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
@@ -61,6 +64,10 @@ export const tasksRouter = router({
       const range = pointsRange(task.mins);
       const pts = Math.min(range.max, Math.max(range.min, input.pts));
       const id = input.id ?? crypto.randomUUID();
+      // O responsável pode registrar por um perfil de criança da própria casa.
+      const creditedTo = input.forMemberId
+        ? await assertProfileOfHousehold(ctx.householdId, input.forMemberId)
+        : ctx.member.id;
 
       const ops: Ops = [
         db
@@ -69,7 +76,7 @@ export const tasksRouter = router({
             id,
             householdId: ctx.householdId,
             taskKey: input.taskKey,
-            completedBy: ctx.member.id,
+            completedBy: creditedTo,
             completedAt: at,
             pointsAwarded: pts,
             note: input.note || null,
@@ -208,6 +215,62 @@ export const tasksRouter = router({
         .onConflictDoUpdate({
           target: [taskOverrides.householdId, taskOverrides.taskKey],
           set,
+        });
+      return { ok: true };
+    }),
+
+  /** Define quem cuida da tarefa (uma pessoa por tarefa; `null` desfaz). */
+  assign: memberProcedure
+    .input(
+      z.object({
+        taskKey: z.string().min(1).max(60),
+        memberId: uuid.nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.memberId === null) {
+        await db
+          .delete(taskAssignments)
+          .where(
+            and(
+              eq(taskAssignments.householdId, ctx.householdId),
+              eq(taskAssignments.taskKey, input.taskKey),
+            ),
+          );
+        return { ok: true };
+      }
+      const task = resolveTask(await loadPlan(ctx.householdId), input.taskKey);
+      if (!task) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Esta tarefa não faz parte da rotina da sua casa.",
+        });
+      }
+      const [member] = await db
+        .select({ id: householdMembers.id })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.id, input.memberId),
+            eq(householdMembers.householdId, ctx.householdId),
+          ),
+        );
+      if (!member) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Pessoa não encontrada nesta casa.",
+        });
+      }
+      await db
+        .insert(taskAssignments)
+        .values({
+          householdId: ctx.householdId,
+          taskKey: input.taskKey,
+          memberId: member.id,
+        })
+        .onConflictDoUpdate({
+          target: [taskAssignments.householdId, taskAssignments.taskKey],
+          set: { memberId: member.id },
         });
       return { ok: true };
     }),

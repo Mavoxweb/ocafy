@@ -60,7 +60,12 @@ export const socialRouter = router({
 
   requestTrade: memberProcedure
     .input(
-      z.object({ id: uuid.optional(), taskKey: z.string().min(1).max(60) }),
+      z.object({
+        id: uuid.optional(),
+        taskKey: z.string().min(1).max(60),
+        /** Adulto que vai ajudar. Opcional quando só há um outro adulto. */
+        toMemberId: uuid.optional(),
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       if (!resolveTask(await loadPlan(ctx.householdId), input.taskKey)) {
@@ -69,15 +74,33 @@ export const socialRouter = router({
           message: "Tarefa desconhecida.",
         });
       }
-      const [other] = await db
+      const others = await db
         .select({ id: householdMembers.id })
         .from(householdMembers)
         .where(
           and(
             eq(householdMembers.householdId, ctx.householdId),
+            eq(householdMembers.kind, "account"),
             ne(householdMembers.id, ctx.member.id),
           ),
         );
+      const other = input.toMemberId
+        ? others.find((o) => o.id === input.toMemberId)
+        : others.length === 1
+          ? others[0]
+          : undefined;
+      if (input.toMemberId && !other) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Escolha um adulto da casa.",
+        });
+      }
+      if (!other && others.length > 1) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Escolha quem vai ajudar.",
+        });
+      }
       if (!other) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -92,6 +115,7 @@ export const socialRouter = router({
             eq(taskTrades.householdId, ctx.householdId),
             eq(taskTrades.taskKey, input.taskKey),
             eq(taskTrades.status, "pending"),
+            eq(taskTrades.assigneeId, other.id),
           ),
         );
       if (dup) return { id: dup.id };

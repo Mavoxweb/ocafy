@@ -11,7 +11,12 @@ import {
   setMyAvatar,
 } from "@/lib/actions";
 import { authClient } from "@/lib/auth/client";
-import { currentMember, partnerOf } from "@/lib/selectors";
+import {
+  ADULT_LIMIT,
+  adultsOf,
+  currentMember,
+  partnerOf,
+} from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { errorMessage } from "@/lib/trpc";
 import {
@@ -135,7 +140,11 @@ export function SettingsSheet() {
         </label>
       </div>
 
-      {!partner && <InvitePanel />}
+      {s.profile.mode !== "solo" &&
+        adultsOf(s).length <
+          (ADULT_LIMIT[s.profile.mode as keyof typeof ADULT_LIMIT] ?? 2) && (
+          <InvitePanel />
+        )}
 
       <h4>Aparência</h4>
       <Segmented<Theme>

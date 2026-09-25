@@ -9,19 +9,22 @@ import {
 } from "./catalog";
 import { dayKey, fmtTime, mondayKey, relDay, uid } from "./dates";
 import { banner, confetti, floatXP, vibrate } from "./fx";
-import { type HouseDraft, draftToInput } from "./house-draft";
+import { type HouseDraft, draftToInput, familyKids } from "./house-draft";
 import {
   achievements,
+  assigneeOf,
   blockDone,
   coinsOf,
   currentMember,
   levelOf,
   litterBagsPerChange,
   mealAlert,
+  memberById,
   memberName,
   officeCurrent,
   officeStepDone,
   officeStepsPct,
+  otherAdults,
   partnerOf,
   pointsFor,
   proteinName,
@@ -51,21 +54,60 @@ export interface SetupInput {
 
 /** Lança em caso de erro (a tela de onboarding mostra a mensagem). */
 export async function createHousehold(input: SetupInput) {
-  await mutateStrict(() =>
-    trpc.household.create.mutate({
+  await mutateStrict(async () => {
+    await trpc.household.create.mutate({
       houseName: input.houseName,
       memberName: input.memberName,
       ...draftToInput(input.draft),
-    }),
-  );
+    });
+    for (const k of familyKids(input.draft)) {
+      await trpc.members.addProfile.mutate({
+        name: k.name.trim() || "Criança",
+        ageBand: k.ageBand,
+      });
+    }
+  });
   await refresh({ force: true });
 }
 
-/** Salva perfil, cômodos e pets ("Minha casa"). Lança em caso de erro. */
+/**
+ * Salva perfil, cômodos, pets e crianças ("Minha casa"). Lança em caso de erro.
+ * A ordem importa: ao sair do modo Família as crianças saem antes; ao entrar, o modo vem antes.
+ */
 export async function saveHouseProfile(draft: HouseDraft) {
-  await mutateStrict(() =>
-    trpc.household.updateProfile.mutate(draftToInput(draft)),
-  );
+  const current = get().members.filter((m) => m.kind === "profile");
+  const kids = familyKids(draft);
+  const keep = new Set(kids.map((k) => k.id).filter(Boolean));
+  const removed = current.filter((c) => !keep.has(c.id));
+  const changed = kids.filter((k) => {
+    const c = current.find((x) => x.id === k.id);
+    return !!c && (c.name !== k.name.trim() || c.ageBand !== k.ageBand);
+  });
+  const added = kids.filter((k) => !k.id);
+  const family = draft.profile.mode === "family";
+
+  await mutateStrict(async () => {
+    if (!family) {
+      for (const c of removed)
+        await trpc.members.removeProfile.mutate({ id: c.id });
+    }
+    await trpc.household.updateProfile.mutate(draftToInput(draft));
+    if (family) {
+      for (const c of removed)
+        await trpc.members.removeProfile.mutate({ id: c.id });
+      for (const k of changed)
+        await trpc.members.updateProfile.mutate({
+          id: k.id as string,
+          name: k.name.trim() || "Criança",
+          ageBand: k.ageBand,
+        });
+      for (const k of added)
+        await trpc.members.addProfile.mutate({
+          name: k.name.trim() || "Criança",
+          ageBand: k.ageBand,
+        });
+    }
+  });
   await refresh({ force: true });
 }
 
@@ -101,6 +143,8 @@ interface CompleteOptions {
   undoExtra?: () => void;
   /** false = o chamador registra no servidor por outro endpoint. */
   remote?: boolean;
+  /** Perfil de criança que fez a tarefa (o responsável registra por ela). */
+  forMemberId?: string;
 }
 
 export function completeTask(
@@ -111,12 +155,19 @@ export function completeTask(
   const t = taskOf(s0, taskId);
   const me = currentMember(s0);
   if (!t || !me) return;
+  // Tarefa atribuída a uma criança: o responsável confirma e o XP vai para ela.
+  const assignee = assigneeOf(s0, taskId);
+  const kidId =
+    opts.forMemberId ??
+    (assignee?.kind === "profile" ? assignee.id : undefined);
+  const kid = kidId ? memberById(s0, kidId) : undefined;
+  const who = kid?.kind === "profile" ? kid : me;
 
   const now = new Date();
   const at = opts.at ?? now;
   const { pts, bonus } = pointsFor(s0, t, now, !!opts.at);
 
-  const beforeLevel = levelOf(xpOf(s0, me.id)).level;
+  const beforeLevel = levelOf(xpOf(s0, who.id)).level;
   const beforeBadges = new Set(
     achievements(s0, now)
       .filter((b) => b.unlocked)
@@ -128,7 +179,7 @@ export function completeTask(
   const entry: CompletionEntry = {
     id: uid(),
     taskId,
-    who: me.id,
+    who: who.id,
     at: at.toISOString(),
     pts,
     dateKey: dayKey(at),
@@ -153,6 +204,7 @@ export function completeTask(
         dateKey: entry.dateKey,
         pts,
         note: opts.note,
+        ...(who.id !== me.id ? { forMemberId: who.id } : {}),
       }),
     );
   }
@@ -168,14 +220,18 @@ export function completeTask(
     );
   vibrate(15);
 
-  toast(`${taskTitle(s1, t)}${bonus ? " · bônus no prazo" : ""}`, () => {
-    opts.undoExtra?.();
-    removeCompletion(entry.id);
-  });
+  const prefix = who.id !== me.id ? `${who.name}: ` : "";
+  toast(
+    `${prefix}${taskTitle(s1, t)}${bonus ? " · bônus no prazo" : ""}`,
+    () => {
+      opts.undoExtra?.();
+      removeCompletion(entry.id);
+    },
+  );
 
-  const lv = levelOf(xpOf(s1, me.id));
+  const lv = levelOf(xpOf(s1, who.id));
   if (lv.level > beforeLevel)
-    banner("⭐", `${me.name} subiu para o nível ${lv.level}`, lv.name);
+    banner("⭐", `${who.name} subiu para o nível ${lv.level}`, lv.name);
   if (!beforeMorning && blockDone(s1, "manha", now))
     banner("☀️", "Manhã completa!", "Rotina da manhã fechada");
   if (!beforeNight && blockDone(s1, "noite", now))
@@ -243,6 +299,18 @@ export function togglePause(taskId: string) {
   void mutate(() =>
     trpc.tasks.setOverride.mutate({ taskKey: taskId, paused: off }),
   );
+}
+
+/** Define quem cuida da tarefa (`null` desfaz). */
+export function assignTask(taskId: string, memberId: string | null) {
+  store.set((s) => {
+    const { [taskId]: _old, ...rest } = s.assignments;
+    return {
+      ...s,
+      assignments: memberId ? { ...rest, [taskId]: memberId } : rest,
+    };
+  });
+  void mutate(() => trpc.tasks.assign.mutate({ taskKey: taskId, memberId }));
 }
 
 /* ================= pessoas / ajustes ================= */
@@ -546,10 +614,12 @@ export function toggleReaction(completionId: string, emoji: ReactionKey) {
   vibrate(8);
 }
 
-export function requestTrade(taskId: string) {
+export function requestTrade(taskId: string, toMemberId?: string) {
   const s = get();
   const me = currentMember(s);
-  const other = partnerOf(s, me?.id);
+  const other = toMemberId
+    ? otherAdults(s, me?.id).find((m) => m.id === toMemberId)
+    : partnerOf(s, me?.id);
   const t = taskOf(s, taskId);
   if (!me || !t) return;
   if (!other) {
@@ -571,7 +641,13 @@ export function requestTrade(taskId: string) {
       },
     ],
   }));
-  void mutate(() => trpc.social.requestTrade.mutate({ id, taskKey: taskId }));
+  void mutate(() =>
+    trpc.social.requestTrade.mutate({
+      id,
+      taskKey: taskId,
+      ...(toMemberId ? { toMemberId } : {}),
+    }),
+  );
   closeSheet();
   toast(`Pedido enviado para ${other.name}: ${taskTitle(s, t)}`);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AssignedTasks,
   FreezerAlerts,
   InviteCard,
   OfficeShortcut,
@@ -38,6 +39,7 @@ export default function TodayPage() {
       <TodayHero />
       <PeopleCards />
       <InviteCard />
+      <AssignedTasks />
       <OfficeShortcut />
       <RoomsCarousel />
       <FreezerAlerts />

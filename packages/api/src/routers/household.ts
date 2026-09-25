@@ -1,5 +1,11 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { DEFAULT_REWARDS, buildRooms } from "@ocafy/core";
+import {
+  DEFAULT_REWARDS,
+  type HouseMode,
+  MODE_LIMITS,
+  buildRooms,
+  nextFreeSlot,
+} from "@ocafy/core";
 import {
   db,
   householdMembers,
@@ -18,6 +24,7 @@ import { z } from "zod";
 import { parseAvatarDataUrl } from "../avatar";
 import { sendEmail } from "../email/send";
 import { inviteEmail } from "../email/templates";
+import { fullMessage, limitsOf, loadRoster } from "../roster";
 import {
   createHouseholdSchema,
   joinSchema,
@@ -44,9 +51,6 @@ const cause = (e: unknown) => (e as { cause?: unknown } | null)?.cause ?? e;
 
 type Ops = [BatchItem<"pg">, ...BatchItem<"pg">[]];
 
-/** Modo Solo = 1 pessoa; Casal = até 2. */
-const maxMembers = (mode: string) => (mode === "solo" ? 1 : 2);
-
 const petValues = (p: {
   name: string;
   species: (typeof pets.$inferInsert)["species"];
@@ -68,7 +72,7 @@ const petValues = (p: {
 };
 
 const profileColumns = (p: {
-  mode: "solo" | "couple";
+  mode: "solo" | "couple" | "family";
   dwelling: "apartment" | "house" | "townhouse" | "studio";
   size: "s" | "m" | "l";
   intensity: "light" | "standard" | "full";
@@ -91,28 +95,13 @@ const profileColumns = (p: {
   officeProject: p.officeProject,
 });
 
-/** Barra convites quando a casa já está completa (Solo = 1, Casal = 2). */
+/** Barra convites quando a casa já tem todos os adultos que o modo permite. */
 async function assertRoomForMember(householdId: string) {
-  const [[{ n }], [house]] = await db.batch([
-    db
-      .select({ n: count() })
-      .from(householdMembers)
-      .where(eq(householdMembers.householdId, householdId)),
-    db
-      .select({ mode: households.mode })
-      .from(households)
-      .where(eq(households.id, householdId)),
-  ]);
-  const mode = house?.mode ?? "couple";
-  if (n >= maxMembers(mode)) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message:
-        mode === "solo"
-          ? "Esta casa está no modo Solo. Mude para Casal em Minha casa para convidar alguém."
-          : "A casa já tem duas pessoas.",
-    });
+  const r = await loadRoster(householdId);
+  if (r.adults >= limitsOf(r.mode).adults) {
+    throw new TRPCError({ code: "CONFLICT", message: fullMessage(r.mode) });
   }
+  return r;
 }
 
 export const householdRouter = router({
@@ -225,23 +214,21 @@ export const householdRouter = router({
         message: "Convite inválido ou expirado.",
       });
     }
-    const [[{ n }], [house]] = await db.batch([
-      db
-        .select({ n: count() })
-        .from(householdMembers)
-        .where(eq(householdMembers.householdId, invite.householdId)),
-      db
-        .select({ mode: households.mode })
-        .from(households)
-        .where(eq(households.id, invite.householdId)),
-    ]);
-    if (n >= maxMembers(house?.mode ?? "couple")) {
+    const roster = await loadRoster(invite.householdId);
+    if (roster.adults >= limitsOf(roster.mode).adults) {
       throw new TRPCError({
         code: "CONFLICT",
         message:
-          house?.mode === "solo"
+          roster.mode === "solo"
             ? "Esta casa é individual (modo Solo)."
-            : "Esta casa já tem duas pessoas.",
+            : "Esta casa já está completa.",
+      });
+    }
+    const slot = nextFreeSlot(roster.slots);
+    if (!slot) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Esta casa já está completa.",
       });
     }
     try {
@@ -251,7 +238,7 @@ export const householdRouter = router({
           userId: ctx.userId,
           displayName: input.memberName,
           role: "member",
-          slot: "b",
+          slot,
         }),
         db
           .update(invites)
@@ -389,21 +376,28 @@ export const householdRouter = router({
   updateProfile: memberProcedure
     .input(updateProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      const [[{ n }], existingPets] = await db.batch([
-        db
-          .select({ n: count() })
-          .from(householdMembers)
-          .where(eq(householdMembers.householdId, ctx.householdId)),
+      const [roster, existingPets] = await Promise.all([
+        loadRoster(ctx.householdId),
         db
           .select({ id: pets.id })
           .from(pets)
           .where(eq(pets.householdId, ctx.householdId)),
       ]);
-      if (n > maxMembers(input.profile.mode)) {
+      const lim = MODE_LIMITS[input.profile.mode];
+      if (roster.adults > lim.adults) {
         throw new TRPCError({
           code: "CONFLICT",
           message:
-            "Há duas pessoas nesta casa; o modo Solo só vale para uma pessoa.",
+            input.profile.mode === "solo"
+              ? "Há mais de uma pessoa nesta casa; o modo Solo só vale para uma."
+              : "Há mais de duas pessoas com conta nesta casa; para reduzir o modo, remova adultos antes.",
+        });
+      }
+      if (roster.kids > lim.kids) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "Há perfis de criança nesta casa. Remova-os antes de sair do modo Família.",
         });
       }
 

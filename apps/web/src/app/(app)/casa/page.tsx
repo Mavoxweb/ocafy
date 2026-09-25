@@ -2,6 +2,7 @@
 
 import {
   HouseFields,
+  KidsEditor,
   ModePicker,
   PetsEditor,
   PlanPreview,
@@ -13,9 +14,9 @@ import { saveHouseProfile } from "@/lib/actions";
 import {
   type HouseDraft,
   draftFromState,
-  draftToInput,
+  draftSignature,
 } from "@/lib/house-draft";
-import { planOf } from "@/lib/selectors";
+import { ADULT_LIMIT, adultsOf, planOf } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { errorMessage } from "@/lib/trpc";
 import { toast } from "@/lib/ui";
@@ -28,11 +29,8 @@ export default function CasaPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const saved = useMemo(
-    () => JSON.stringify(draftToInput(draftFromState(s))),
-    [s],
-  );
-  const dirty = JSON.stringify(draftToInput(draft)) !== saved;
+  const saved = useMemo(() => draftSignature(draftFromState(s)), [s]);
+  const dirty = draftSignature(draft) !== saved;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
@@ -43,8 +41,9 @@ export default function CasaPage() {
   }, [saved]);
 
   const patch = (fn: (d: HouseDraft) => HouseDraft) => setDraft(fn);
-  const two = s.members.length > 1;
-  const soloBlocked = two && draft.profile.mode === "solo";
+  const adults = adultsOf(s).length;
+  const limit = ADULT_LIMIT[draft.profile.mode as keyof typeof ADULT_LIMIT];
+  const soloBlocked = adults > limit;
   const namesOk = draft.pets.every((p) => p.name.trim().length > 0);
   const canSave = dirty && !busy && !soloBlocked && namesOk;
   const before = planOf(s).list;
@@ -75,10 +74,21 @@ export default function CasaPage() {
         <ModePicker draft={draft} patch={patch} />
         {soloBlocked && (
           <p role="alert" className="mt-2 text-[0.88rem] font-bold text-late-t">
-            Há duas pessoas nesta casa — o modo Solo vale para uma só.
+            {draft.profile.mode === "solo"
+              ? "Há mais de uma pessoa nesta casa — o modo Solo vale para uma só."
+              : "Há mais de duas pessoas com conta — o modo Casal comporta duas."}
           </p>
         )}
       </Panel>
+
+      {draft.profile.mode === "family" && (
+        <>
+          <h2>Crianças</h2>
+          <Panel>
+            <KidsEditor draft={draft} patch={patch} />
+          </Panel>
+        </>
+      )}
 
       <h2>Sobre a casa</h2>
       <Panel>

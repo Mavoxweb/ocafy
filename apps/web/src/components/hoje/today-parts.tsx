@@ -2,16 +2,18 @@
 
 import { InvitePanel } from "@/components/shell/invite-panel";
 import { AvatarFace } from "@/components/ui/avatar";
-import { IconFlame, RoomIcon } from "@/components/ui/icons";
+import { IconCheck, IconFlame, RoomIcon } from "@/components/ui/icons";
 import { Group } from "@/components/ui/primitives";
-import { completeTask, pullMeal, respondTrade } from "@/lib/actions";
+import { completeTask, pullMeal, respondTrade, undoToday } from "@/lib/actions";
 import { OFFICE_GOALS, SLOT_INFO } from "@/lib/catalog";
 import { dayKey, fromKey, relDay } from "@/lib/dates";
 import { useNow } from "@/lib/hooks";
 import {
+  ADULT_LIMIT,
   type RoomGroup,
   activeRecurring,
   activeRoutine,
+  adultsOf,
   currentMember,
   doneToday,
   houseHealth,
@@ -34,6 +36,7 @@ import {
   xpOf,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
+import { openSheet } from "@/lib/ui";
 import Link from "next/link";
 
 /* ---------- herói: anel de progresso da rotina ---------- */
@@ -106,8 +109,76 @@ export function PeopleCards() {
 /* ---------- convite (enquanto a casa tem só uma pessoa) ---------- */
 export function InviteCard() {
   const s = useAppState();
-  if (s.members.length >= 2) return null;
+  const limit = ADULT_LIMIT[s.profile.mode as keyof typeof ADULT_LIMIT] ?? 2;
+  // Solo nunca convida; Casal até 2 adultos; Família até 4.
+  if (s.profile.mode === "solo" || adultsOf(s).length >= limit) return null;
   return <InvitePanel />;
+}
+
+/* ---------- tarefas atribuídas (crianças e as minhas) ---------- */
+export function AssignedTasks() {
+  const s = useAppState();
+  const now = useNow();
+  const me = currentMember(s);
+  const groups = s.members
+    .filter((m) => m.kind === "profile" || m.id === me?.id)
+    .map((m) => ({
+      m,
+      items: Object.entries(s.assignments)
+        .filter(([, who]) => who === m.id)
+        .map(([key]) => taskOf(s, key))
+        .filter((t): t is NonNullable<typeof t> => !!t),
+    }))
+    .filter((g) => g.items.length > 0);
+  if (!groups.length) return null;
+
+  return (
+    <>
+      {groups.map(({ m, items }) => (
+        <section key={m.id}>
+          <h2>
+            {m.id === me?.id ? "Suas tarefas" : `Tarefas de ${m.name}`}
+            <small>{items.length}</small>
+          </h2>
+          <Group>
+            {items.map((t) => {
+              const done =
+                t.kind === "routine"
+                  ? doneToday(s, t.id, now)
+                  : taskStatus(s, t, now).state === "ok";
+              return (
+                <div key={t.id} className={`chk ${done ? "done" : ""}`}>
+                  <button
+                    type="button"
+                    className="box"
+                    aria-pressed={done}
+                    aria-label={`${done ? "Desfazer" : "Marcar"}: ${taskTitle(s, t)}`}
+                    onClick={(e) => {
+                      if (done && t.kind === "routine") undoToday(t.id);
+                      else if (!done)
+                        completeTask(t.id, {
+                          rect: e.currentTarget.getBoundingClientRect(),
+                        });
+                    }}
+                  >
+                    {done && <IconCheck />}
+                  </button>
+                  <button
+                    type="button"
+                    className="tt text-left"
+                    style={{ background: "none", border: 0, padding: 0 }}
+                    onClick={() => openSheet({ kind: "task", id: t.id })}
+                  >
+                    {taskTitle(s, t)}
+                  </button>
+                </div>
+              );
+            })}
+          </Group>
+        </section>
+      ))}
+    </>
+  );
 }
 
 /* ---------- Projeto Escritório (atalho) ---------- */

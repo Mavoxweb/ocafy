@@ -55,7 +55,7 @@ async function newHouse(
   stock: number | null = 6,
   over: {
     profile?: Partial<Omit<HouseProfile, "mode">> & {
-      mode?: "solo" | "couple";
+      mode?: "solo" | "couple" | "family";
     };
     pets?: PetInput[];
   } = {},
@@ -644,7 +644,7 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(await code(() => solo.c.household.createInvite())).toBe("OK");
   });
 
-  it("valida cômodos e o modo Família ainda não existe", async () => {
+  it("valida cômodos e rejeita modos desconhecidos", async () => {
     const { c } = await newHouse("Casa Limites", null);
     const snap = await c.household.snapshot();
     if (snap.status !== "ready") throw new Error();
@@ -665,7 +665,7 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(
       await code(() =>
         c.household.updateProfile({
-          profile: { ...profile, mode: "family" as never },
+          profile: { ...profile, mode: "clan" as never },
           rooms: [],
           pets: [],
         }),
@@ -753,6 +753,201 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     await db
       .delete(onboardingEvents)
       .where(eq(onboardingEvents.userId, userId));
+  });
+
+  it("família: perfis de criança, tarefas por idade e crédito para a criança", async () => {
+    const owner = await newHouse("Casa Família", null, {
+      profile: { mode: "family" },
+    });
+    const bia = await owner.c.members.addProfile({
+      name: "Bia",
+      ageBand: "child_4_6",
+    });
+    const leo = await owner.c.members.addProfile({
+      name: "Leo",
+      ageBand: "child_10_12",
+    });
+    let snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(
+      snap.data.members.map((m) => `${m.slot}:${m.kind}:${m.name}`),
+    ).toEqual(["a:account:Alex", "b:profile:Bia", "c:profile:Leo"]);
+    expect(snap.data.members[1].ageBand).toBe("child_4_6");
+
+    // tarefas infantis entram no plano conforme a faixa etária, e o servidor as aceita
+    const r = await owner.c.tasks.complete({
+      taskKey: "kid_brinquedos",
+      forMemberId: bia.id,
+      ...completion(),
+    });
+    expect(r.pts).toBeGreaterThan(0);
+    await owner.c.tasks.complete({
+      taskKey: "kid_quarto",
+      forMemberId: leo.id,
+      ...completion(),
+    });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(
+      snap.data.completions
+        .map(
+          (x) =>
+            `${x.taskId}:${x.who === bia.id ? "Bia" : x.who === leo.id ? "Leo" : "?"}`,
+        )
+        .sort(),
+    ).toEqual(["kid_brinquedos:Bia", "kid_quarto:Leo"]);
+    // 13+ ainda não está no plano (nenhum adolescente na casa)
+    expect(
+      await code(() =>
+        owner.c.tasks.complete({ taskKey: "kid_banheiro", ...completion() }),
+      ),
+    ).toBe("BAD_REQUEST");
+
+    // só perfis da própria casa
+    const other = await newHouse("Casa Outra Família", null, {
+      profile: { mode: "family" },
+    });
+    expect(
+      await code(() =>
+        other.c.tasks.complete({
+          taskKey: "aspirar",
+          forMemberId: bia.id,
+          ...completion(),
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+    // não dá para registrar por um adulto pelo forMemberId
+    const adultId = snap.data.meId;
+    expect(
+      await code(() =>
+        owner.c.tasks.complete({
+          taskKey: "aspirar",
+          forMemberId: adultId,
+          ...completion(),
+        }),
+      ),
+    ).toBe("BAD_REQUEST");
+
+    // atribuição
+    await owner.c.tasks.assign({ taskKey: "m_cama", memberId: bia.id });
+    await owner.c.tasks.assign({ taskKey: "m_cama", memberId: leo.id });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.assignments).toEqual({ m_cama: leo.id });
+    expect(
+      await code(() =>
+        other.c.tasks.assign({ taskKey: "m_cama", memberId: bia.id }),
+      ),
+    ).toBe("BAD_REQUEST");
+    expect(
+      await code(() =>
+        owner.c.tasks.assign({ taskKey: "nao_existe", memberId: leo.id }),
+      ),
+    ).toBe("BAD_REQUEST");
+    await owner.c.tasks.assign({ taskKey: "m_cama", memberId: null });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.assignments).toEqual({});
+
+    // sair do modo Família com crianças na casa não pode
+    const houseProfile = snap.data.profile;
+    expect(
+      await code(() =>
+        owner.c.household.updateProfile({
+          profile: { ...houseProfile, mode: "couple" },
+          rooms: [{ kind: "cozinha" }],
+          pets: [],
+        }),
+      ),
+    ).toBe("CONFLICT");
+
+    // remover o perfil leva o histórico dele e a tarefa infantil sai do plano
+    await owner.c.members.removeProfile({ id: bia.id });
+    snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    expect(snap.data.members.map((m) => m.name)).toEqual(["Alex", "Leo"]);
+    expect(snap.data.completions.every((x) => x.who !== bia.id)).toBe(true);
+  });
+
+  it("família: perfis só no modo Família, com limites e até 4 adultos", async () => {
+    const couple = await newHouse("Casa de Casal", null);
+    expect(
+      await code(() =>
+        couple.c.members.addProfile({ name: "Bia", ageBand: "child_4_6" }),
+      ),
+    ).toBe("PRECONDITION_FAILED");
+
+    const fam = await newHouse("Casa Grande", null, {
+      profile: { mode: "family" },
+    });
+    for (let i = 0; i < 6; i++)
+      await fam.c.members.addProfile({
+        name: `Criança ${i + 1}`,
+        ageBand: "child_7_9",
+      });
+    // 1 adulto + 6 perfis = 7 slots; o 7º perfil bate no limite de perfis
+    expect(
+      await code(() =>
+        fam.c.members.addProfile({ name: "Sobra", ageBand: "child_7_9" }),
+      ),
+    ).toBe("CONFLICT");
+
+    // adultos: entram até 4 (os slots dos perfis já foram usados, sobra 1 livre)
+    const { code: c1 } = await fam.c.household.createInvite();
+    const p2 = as(`test-${randomUUID()}`);
+    await p2.household.join({ code: c1, memberName: "Bia" });
+    const snap = await fam.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    // o slot livre mais baixo foi entregue (b..g ocupados pelos perfis → h)
+    expect(snap.data.members.map((m) => m.slot).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "h",
+    ]);
+    // sem mais slots: convite recusado
+    expect(await code(() => fam.c.household.createInvite())).toBe("OK");
+    const p3 = as(`test-${randomUUID()}`);
+    const inv = await fam.c.household.createInvite();
+    expect(
+      await code(() =>
+        p3.household.join({ code: inv.code, memberName: "Cris" }),
+      ),
+    ).toBe("CONFLICT");
+  });
+
+  it("família: pedido de troca escolhe quem ajuda entre vários adultos", async () => {
+    const owner = await newHouse("Casa Trocas", null, {
+      profile: { mode: "family" },
+    });
+    const { code: c1 } = await owner.c.household.createInvite();
+    const a2 = as(`test-${randomUUID()}`);
+    await a2.household.join({ code: c1, memberName: "Bia" });
+    const { code: c2 } = await owner.c.household.createInvite();
+    const a3 = as(`test-${randomUUID()}`);
+    await a3.household.join({ code: c2, memberName: "Cris" });
+
+    // com 2 outros adultos é preciso escolher
+    expect(
+      await code(() => owner.c.social.requestTrade({ taskKey: "aspirar" })),
+    ).toBe("BAD_REQUEST");
+    const snap = await owner.c.household.snapshot();
+    if (snap.status !== "ready") throw new Error();
+    const bia = snap.data.members.find((m) => m.name === "Bia");
+    if (!bia) throw new Error();
+    const t = await owner.c.social.requestTrade({
+      taskKey: "aspirar",
+      toMemberId: bia.id,
+    });
+    // outro adulto não pode responder por Bia
+    expect(
+      await code(() => a3.social.respondTrade({ id: t.id, accept: true })),
+    ).toBe("FORBIDDEN");
+    await a2.social.respondTrade({ id: t.id, accept: true });
   });
 
   it("apagar a casa remove tudo em cascata", async () => {

@@ -27,7 +27,7 @@ const species = Object.keys(PET_SPECIES) as [PetSpecies, ...PetSpecies[]];
 
 /** Perfil da casa. Família fica para a próxima versão (só solo/casal por enquanto). */
 export const profileInput = z.object({
-  mode: z.enum(["solo", "couple"]),
+  mode: z.enum(["solo", "couple", "family"]),
   dwelling: z.enum(["apartment", "house", "townhouse", "studio"]),
   size: z.enum(["s", "m", "l"]),
   intensity: z.enum(["light", "standard", "full"]),
@@ -95,6 +95,11 @@ export const onboardingStepSchema = z.object({
     .regex(/^[a-z0-9_:-]{1,40}$/),
 });
 
+export const memberProfileSchema = z.object({
+  name: z.string().trim().min(1, "Dê um nome").max(20),
+  ageBand: z.enum(["child_4_6", "child_7_9", "child_10_12", "teen_13_17"]),
+});
+
 export const joinSchema = z.object({
   code: z.string().trim().min(4).max(16),
   memberName: z.string().trim().min(2, "Seu nome é obrigatório").max(24),
@@ -108,6 +113,8 @@ export const completionInput = z.object({
 });
 
 export const completeTaskSchema = completionInput.extend({
+  /** Perfil de criança da casa que fez a tarefa (o responsável registra por ela). */
+  forMemberId: uuid.optional(),
   taskKey: z.string().min(1).max(60),
   note: z.string().trim().max(120).optional(),
 });

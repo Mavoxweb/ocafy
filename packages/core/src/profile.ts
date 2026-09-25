@@ -73,6 +73,54 @@ export const INTENSITY_LABELS: Record<
   },
 };
 
+/* ================= pessoas da casa ================= */
+
+/** Faixas etárias dos perfis de criança (sem login; controlados por um responsável). */
+export type AgeBand = "child_4_6" | "child_7_9" | "child_10_12" | "teen_13_17";
+
+export const AGE_BAND_ORDER: AgeBand[] = [
+  "child_4_6",
+  "child_7_9",
+  "child_10_12",
+  "teen_13_17",
+];
+
+export const AGE_BANDS: Record<AgeBand, { label: string; hint: string }> = {
+  child_4_6: { label: "4 a 6 anos", hint: "Tarefas simples, sempre com ajuda" },
+  child_7_9: { label: "7 a 9 anos", hint: "Já cuida de tarefas pequenas" },
+  child_10_12: { label: "10 a 12 anos", hint: "Rotinas com mais autonomia" },
+  teen_13_17: { label: "13 a 17 anos", hint: "Quase tudo, com combinado" },
+};
+
+export const isAgeBand = (v: string): v is AgeBand =>
+  (AGE_BAND_ORDER as string[]).includes(v);
+
+/** `band` já alcança a faixa mínima `min`? */
+export const ageAtLeast = (band: AgeBand, min: AgeBand): boolean =>
+  AGE_BAND_ORDER.indexOf(band) >= AGE_BAND_ORDER.indexOf(min);
+
+/** Criança da casa, para o motor de rotinas. */
+export interface Kid {
+  id: string;
+  ageBand: AgeBand;
+}
+
+/** Slots (cores) das pessoas da casa: o 1º livre é dado a quem entra. */
+export const MEMBER_SLOTS = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+export type MemberSlot = (typeof MEMBER_SLOTS)[number];
+
+/** Limites por modo: adultos com conta e perfis de criança. */
+export const MODE_LIMITS: Record<HouseMode, { adults: number; kids: number }> =
+  {
+    solo: { adults: 1, kids: 0 },
+    couple: { adults: 2, kids: 0 },
+    family: { adults: 4, kids: 6 },
+  };
+
+/** Primeiro slot livre (ou null se a casa está cheia). */
+export const nextFreeSlot = (used: string[]): MemberSlot | null =>
+  MEMBER_SLOTS.find((s) => !used.includes(s)) ?? null;
+
 /* ================= cômodos ================= */
 
 export type RoomKind =
@@ -337,6 +385,7 @@ export interface HouseTemplate {
   hint: string;
   profile: Partial<HouseProfile>;
   pets: Omit<Pet, "id">[];
+  kids?: { name: string; ageBand: AgeBand }[];
 }
 
 export const HOUSE_TEMPLATES: HouseTemplate[] = [
@@ -383,5 +432,21 @@ export const HOUSE_TEMPLATES: HouseTemplate[] = [
         outdoorAccess: true,
       },
     ],
+  },
+  {
+    id: "familia_cao",
+    name: "Família com criança e cão",
+    hint: "Tarefas por idade e passeios",
+    profile: { mode: "family", dwelling: "house", size: "m" },
+    pets: [
+      {
+        name: "Thor",
+        species: "dog",
+        size: "medium",
+        coat: "short",
+        outdoorAccess: true,
+      },
+    ],
+    kids: [{ name: "Criança 1", ageBand: "child_7_9" }],
   },
 ];

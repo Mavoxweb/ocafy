@@ -1,4 +1,5 @@
 import type {
+  AgeBand,
   HouseProfile,
   LitterSettings,
   Pet,
@@ -21,6 +22,7 @@ import {
   rewardPurchases,
   rooms,
   storeRewards,
+  taskAssignments,
   taskOverrides,
   taskTrades,
 } from "@ocafy/db";
@@ -40,7 +42,10 @@ export interface Snapshot {
   members: {
     id: string;
     name: string;
-    slot: "a" | "b";
+    slot: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h";
+    /** account = adulto com login; profile = perfil de criança. */
+    kind: "account" | "profile";
+    ageBand: AgeBand | null;
     /** Versão da foto (null = sem foto); a imagem sai por /api/avatar/:id?v=… */
     avatarVersion: number | null;
   }[];
@@ -48,6 +53,8 @@ export interface Snapshot {
   profile: HouseProfile;
   rooms: RoomInstance[];
   pets: Pet[];
+  /** Quem cuida de cada tarefa (chave da tarefa → id da pessoa). */
+  assignments: Record<string, string>;
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
   overrides: Record<string, { min?: number; max?: number; off?: boolean }>;
@@ -140,6 +147,7 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     reactionRows,
     tradeRows,
     inviteRows,
+    assignmentRows,
   ] = await db.batch([
     db
       .select({
@@ -149,6 +157,8 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
         role: householdMembers.role,
         slot: householdMembers.slot,
         avatarVersion: householdMembers.avatarVersion,
+        kind: householdMembers.kind,
+        ageBand: householdMembers.ageBand,
       })
       .from(householdMembers)
       .where(eq(householdMembers.householdId, hid)),
@@ -183,6 +193,10 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
           gt(invites.expiresAt, now),
         ),
       ),
+    db
+      .select()
+      .from(taskAssignments)
+      .where(eq(taskAssignments.householdId, hid)),
   ]);
 
   const member = memberRows.find((m) => m.userId === userId);
@@ -225,7 +239,12 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
         name: m.displayName,
         slot: m.slot,
         avatarVersion: m.avatarVersion,
+        kind: m.kind,
+        ageBand: m.ageBand,
       })),
+    assignments: Object.fromEntries(
+      assignmentRows.map((a) => [a.taskKey, a.memberId]),
+    ),
     profile: profileOf(household),
     rooms: roomsOf(roomRows),
     pets: petRows.map(petOf),

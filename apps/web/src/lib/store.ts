@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  type AgeBand,
   type CompletionEntry,
   DEFAULT_PROFILE,
   type HouseProfile,
   type LitterSettings,
+  type MemberSlot,
   type Pet,
   type RoomInstance,
   defaultRoomCounts,
@@ -19,12 +21,15 @@ import type { InventoryDest, ReactionKey } from "./catalog";
  * otimista antes de confirmar no servidor.
  */
 
-export type Slot = "a" | "b";
+export type Slot = MemberSlot;
 
 export interface Member {
   id: string;
   name: string;
   slot: Slot;
+  /** account = adulto com login; profile = perfil de criança. */
+  kind: "account" | "profile";
+  ageBand: AgeBand | null;
   /** URL da foto (/api/avatar/…) ou data URL enquanto o envio está em andamento. */
   avatar: string | null;
 }
@@ -112,6 +117,8 @@ export interface AppState {
   litter: Omit<LitterSettings, "currentStock">;
   litterStock: number | null;
   overrides: Record<string, TaskOverride>;
+  /** Quem cuida de cada tarefa (chave da tarefa → id da pessoa). */
+  assignments: Record<string, string>;
   completions: CompletionEntry[];
   meals: MealRecord[];
   office: OfficeState;
@@ -143,6 +150,7 @@ export const EMPTY_STATE: AppState = {
   litter: DEFAULT_LITTER,
   litterStock: null,
   overrides: {},
+  assignments: {},
   completions: [],
   meals: [],
   office: { start: null, done: {}, steps: {}, inventory: [] },

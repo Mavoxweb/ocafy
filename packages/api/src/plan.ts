@@ -1,6 +1,7 @@
 import {
   DEFAULT_PROFILE,
   type HouseProfile,
+  type Kid,
   type Pet,
   type PlanInput,
   type PlannedTask,
@@ -8,7 +9,7 @@ import {
   generatePlan,
   roomsFromRows,
 } from "@ocafy/core";
-import { db, households, pets, rooms } from "@ocafy/db";
+import { db, householdMembers, households, pets, rooms } from "@ocafy/db";
 import { eq } from "drizzle-orm";
 
 type HouseholdRow = typeof households.$inferSelect;
@@ -40,29 +41,35 @@ export const petOf = (p: PetRow): Pet => ({
 
 export const roomsOf = (rows: RoomRow[]): RoomInstance[] => roomsFromRows(rows);
 
-export const planOf = (
-  h: HouseholdRow,
-  roomRows: RoomRow[],
-  petRows: PetRow[],
-): PlannedTask[] =>
-  generatePlan({
-    profile: profileOf(h),
-    rooms: roomsOf(roomRows),
-    pets: petRows.map(petOf),
-  });
+/** Perfis de criança (com faixa etária) entre as pessoas da casa. */
+export const kidsOf = (
+  rows: { id: string; kind: string; ageBand: string | null }[],
+): Kid[] =>
+  rows
+    .filter((r) => r.kind === "profile" && r.ageBand)
+    .map((r) => ({ id: r.id, ageBand: r.ageBand as Kid["ageBand"] }));
 
-/** Entrada do motor de rotinas para uma casa (3 consultas pequenas, em lote). */
+/** Entrada do motor de rotinas para uma casa (consultas pequenas, em lote). */
 export async function loadPlanInput(householdId: string): Promise<PlanInput> {
-  const [[h], roomRows, petRows] = await db.batch([
+  const [[h], roomRows, petRows, memberRows] = await db.batch([
     db.select().from(households).where(eq(households.id, householdId)),
     db.select().from(rooms).where(eq(rooms.householdId, householdId)),
     db.select().from(pets).where(eq(pets.householdId, householdId)),
+    db
+      .select({
+        id: householdMembers.id,
+        kind: householdMembers.kind,
+        ageBand: householdMembers.ageBand,
+      })
+      .from(householdMembers)
+      .where(eq(householdMembers.householdId, householdId)),
   ]);
-  if (!h) return { profile: DEFAULT_PROFILE, rooms: [], pets: [] };
+  if (!h) return { profile: DEFAULT_PROFILE, rooms: [], pets: [], kids: [] };
   return {
     profile: profileOf(h),
     rooms: roomsOf(roomRows),
     pets: petRows.map(petOf),
+    kids: kidsOf(memberRows),
   };
 }
 

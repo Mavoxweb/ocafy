@@ -2,19 +2,24 @@
 
 import { RoomIcon } from "@/components/ui/icons";
 import { Chip, Field, Segmented } from "@/components/ui/primitives";
+import { uid } from "@/lib/dates";
 import {
   type HouseDraft,
+  type KidDraft,
   type PetDraft,
   draftPlan,
   newPet,
 } from "@/lib/house-draft";
 import {
+  AGE_BANDS,
+  AGE_BAND_ORDER,
   DOG_SIZES,
   DOG_SIZE_ORDER,
   DWELLING_LABELS,
   INTENSITY_LABELS,
   type Intensity,
   MODE_LABELS,
+  MODE_LIMITS,
   PET_SPECIES,
   type PetSpecies,
   type PlannedTask,
@@ -32,7 +37,99 @@ import { useMemo, useState } from "react";
 
 type Patch = (fn: (d: HouseDraft) => HouseDraft) => void;
 
+/* ================= crianças (modo Família) ================= */
+
+export function KidsEditor({
+  draft,
+  patch,
+}: { draft: HouseDraft; patch: Patch }) {
+  const max = MODE_LIMITS.family.kids;
+  const add = () =>
+    patch((d) => ({
+      ...d,
+      kids: [
+        ...d.kids,
+        {
+          key: uid(),
+          name: `Criança ${d.kids.length + 1}`,
+          ageBand: "child_7_9",
+        },
+      ],
+    }));
+  const update = (key: string, next: Partial<KidDraft>) =>
+    patch((d) => ({
+      ...d,
+      kids: d.kids.map((k) => (k.key === key ? { ...k, ...next } : k)),
+    }));
+  const remove = (key: string) =>
+    patch((d) => ({ ...d, kids: d.kids.filter((k) => k.key !== key) }));
+
+  return (
+    <div className="grid gap-3">
+      <p className="meta">
+        Crianças não precisam de conta: um adulto registra as tarefas por elas e
+        o XP vai para o perfil delas. Você escolhe a idade e o Ocafy sugere
+        tarefas do tamanho certo.
+      </p>
+      {draft.kids.map((k) => (
+        <div key={k.key} className="petcard">
+          <div className="petcard-head">
+            <span className="petcard-ico" aria-hidden="true">
+              🧒
+            </span>
+            <input
+              type="text"
+              maxLength={20}
+              value={k.name}
+              aria-label="Nome da criança"
+              onChange={(e) => update(k.key, { name: e.target.value })}
+            />
+            <button
+              type="button"
+              className="link"
+              onClick={() => remove(k.key)}
+            >
+              Remover
+            </button>
+          </div>
+          <div>
+            <div className="qlabel">Faixa etária</div>
+            <div className="chips wrap">
+              {AGE_BAND_ORDER.map((b) => (
+                <Chip
+                  key={b}
+                  pressed={k.ageBand === b}
+                  onClick={() => update(k.key, { ageBand: b })}
+                >
+                  {AGE_BANDS[b].label}
+                </Chip>
+              ))}
+            </div>
+            <p className="meta mt-1">{AGE_BANDS[k.ageBand].hint}</p>
+          </div>
+          {k.id && (
+            <p className="meta">
+              Ao remover, o histórico e o XP deste perfil também saem da casa.
+            </p>
+          )}
+        </div>
+      ))}
+      {draft.kids.length < max && (
+        <button type="button" className="btn btn-small" onClick={add}>
+          + Adicionar criança
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ================= sobre a casa ================= */
+
+const MODE_TEXT = {
+  solo: ["🧍", "Só você — sem divisão, com metas suas"],
+  couple: ["👫", "Duas pessoas dividindo, com placar e trocas"],
+  family: ["👨‍👩‍👧", "Adultos e crianças, com tarefas por idade"],
+} as const;
 
 export function ModePicker({
   draft,
@@ -41,7 +138,7 @@ export function ModePicker({
   return (
     <div className="grid gap-2.5">
       <div className="mode-grid">
-        {(["solo", "couple"] as const).map((m) => (
+        {(["solo", "couple", "family"] as const).map((m) => (
           <button
             key={m}
             type="button"
@@ -52,23 +149,12 @@ export function ModePicker({
             }
           >
             <span className="mode-emoji" aria-hidden="true">
-              {m === "solo" ? "🧍" : "👫"}
+              {MODE_TEXT[m][0]}
             </span>
             <b>{MODE_LABELS[m]}</b>
-            <span className="meta">
-              {m === "solo"
-                ? "Só você — sem divisão, com metas suas"
-                : "Duas pessoas dividindo, com placar e trocas"}
-            </span>
+            <span className="meta">{MODE_TEXT[m][1]}</span>
           </button>
         ))}
-        <div className="mode-card soon" aria-disabled="true">
-          <span className="mode-emoji" aria-hidden="true">
-            👨‍👩‍👧
-          </span>
-          <b>Família</b>
-          <span className="meta">Em breve — filhos e mais pessoas</span>
-        </div>
       </div>
     </div>
   );

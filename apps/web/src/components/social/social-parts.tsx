@@ -18,6 +18,7 @@ import {
   achievements,
   activeRecurring,
   activeRoutine,
+  childrenOf,
   currentMember,
   derive,
   levelOf,
@@ -31,7 +32,6 @@ import {
   weeklyGoal,
   xpOf,
 } from "@/lib/selectors";
-import type { Slot } from "@/lib/store";
 import { useAppState } from "@/lib/store";
 
 /* ---------- desafio da semana ---------- */
@@ -47,6 +47,9 @@ export function WeeklyDuel() {
     A === B
       ? "Empatados — bora desempatar"
       : `${(A > B ? a : b)?.name} está na frente por ${Math.abs(A - B)} XP`;
+
+  if (s.members.length > 2 || childrenOf(s).length > 0)
+    return <WeeklyRanking />;
 
   if (!b) {
     return (
@@ -143,6 +146,83 @@ export function WeeklyDuel() {
               </div>
               <div className="k">
                 faltam {L.xpForNextLevel - L.xpInCurrentLevel} XP
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* ---------- ranking da família (3 ou mais pessoas) ---------- */
+function WeeklyRanking() {
+  const s = useAppState();
+  const now = useNow();
+  const mk = mondayKey(now);
+  const goal = weeklyGoal(s, now);
+  const rows = s.members
+    .map((m) => ({ m, xp: ptsSince(s, m.id, mk) }))
+    .sort((x, y) => y.xp - x.xp);
+  const top = Math.max(1, ...rows.map((r) => r.xp));
+  const total = rows.reduce((a, r) => a + r.xp, 0);
+
+  return (
+    <>
+      <h2>
+        Placar da semana<small>desde segunda</small>
+      </h2>
+      <Panel>
+        <div className="grid gap-2.5">
+          {rows.map(({ m, xp }, i) => (
+            <div key={m.id} className="flex items-center gap-2.5">
+              <span className="w-5 text-center text-[0.8rem] font-extrabold text-muted">
+                {i + 1}
+              </span>
+              <span className={`tag ${m.slot}`}>{m.name}</span>
+              <div className={`xpbar ${m.slot} flex-1`}>
+                <i style={{ width: `${Math.round((xp / top) * 100)}%` }} />
+              </div>
+              <b className="w-12 text-right text-[0.9rem]">{xp}</b>
+            </div>
+          ))}
+        </div>
+        <p className="meta text-center">Somando: {total} XP juntos.</p>
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between text-[0.82rem] font-bold">
+            <span>
+              {goal.isReached ? "🏆 Casa implacável!" : "Meta da casa"}
+            </span>
+            <span className="text-muted">
+              {goal.currentXp} / {goal.targetXp} XP
+            </span>
+          </div>
+          <div className="mt-1.5">
+            <Bar pct={goal.progressPercent} />
+          </div>
+          <p className="meta">
+            {goal.isReached
+              ? `Meta batida: +${goal.coinsReward} moedas para cada um.`
+              : `Bata a meta e ganhe +${goal.coinsReward} moedas cada.`}
+          </p>
+        </div>
+      </Panel>
+      <div className="lvcards">
+        {s.members.map((m) => {
+          const L = levelOf(xpOf(s, m.id));
+          return (
+            <div key={m.id} className="stat">
+              <span className={`tag ${m.slot}`}>{m.name}</span>
+              <div className="lvn mt-2.5">Nv {L.level}</div>
+              <div className="k">
+                {L.name} · {xpOf(s, m.id)} XP
+              </div>
+              <div className={`xpbar ${m.slot}`}>
+                <i
+                  style={{
+                    width: `${Math.round((L.xpInCurrentLevel / L.xpForNextLevel) * 100)}%`,
+                  }}
+                />
               </div>
             </div>
           );
@@ -261,24 +341,19 @@ export function Report({ days }: { days: 7 | 30 }) {
   const from = dayKey(addDays(now, -(days - 1)));
   const es = derive(s).entries.filter((e) => e.dateKey >= from);
   const routine = activeRoutine(s);
-  const [a, b] = [memberBySlot(s, "a"), memberBySlot(s, "b")];
-
-  const tot: Record<Slot, { n: number; m: number }> = {
-    a: { n: 0, m: 0 },
-    b: { n: 0, m: 0 },
-  };
-  const byCat: Record<string, { a: number; b: number }> = {};
+  const tot: Record<string, { n: number; m: number }> = {};
+  const byCat: Record<string, Record<string, number>> = {};
   for (const e of es) {
     const t = taskOf(s, e.taskId);
-    const slot = memberById(s, e.who)?.slot;
-    if (!t || !slot) continue;
-    tot[slot].n++;
-    tot[slot].m += t.mins;
-    byCat[t.cat] ??= { a: 0, b: 0 };
-    byCat[t.cat][slot] += t.mins;
+    if (!t || !memberById(s, e.who)) continue;
+    tot[e.who] ??= { n: 0, m: 0 };
+    tot[e.who].n++;
+    tot[e.who].m += t.mins;
+    byCat[t.cat] ??= {};
+    byCat[t.cat][e.who] = (byCat[t.cat][e.who] ?? 0) + t.mins;
   }
-  const allM = tot.a.m + tot.b.m;
-  const pa = allM ? Math.round((tot.a.m / allM) * 100) : 50;
+  const allM = Object.values(tot).reduce((x, v) => x + v.m, 0);
+  const people = s.members.filter((m) => (tot[m.id]?.m ?? 0) > 0);
 
   const miss = new Map<string, number>(routine.map((t) => [t.id, 0]));
   const heat: { key: string; n: number }[] = [];
@@ -312,35 +387,44 @@ export function Report({ days }: { days: 7 | 30 }) {
       {allM ? (
         <>
           <div className="split">
-            <div className="pa" style={{ width: `${pa}%` }}>
-              {a?.name} {pa}%
-            </div>
-            <div className="pb" style={{ width: `${100 - pa}%` }}>
-              {b?.name} {100 - pa}%
-            </div>
+            {people.map((m) => {
+              const pct = Math.round(((tot[m.id]?.m ?? 0) / allM) * 100);
+              return (
+                <div
+                  key={m.id}
+                  className={`p${m.slot}`}
+                  style={{ width: `${pct}%` }}
+                >
+                  {m.name} {pct}%
+                </div>
+              );
+            })}
           </div>
           <p className="meta">
-            {a?.name}: {tot.a.n} tarefas, ~{hours(tot.a.m)} h · {b?.name}:{" "}
-            {tot.b.n} tarefas, ~{hours(tot.b.m)} h. Medido em minutos estimados,
-            não em número de tarefas.
+            {people
+              .map(
+                (m) =>
+                  `${m.name}: ${tot[m.id].n} tarefas, ~${hours(tot[m.id].m)} h`,
+              )
+              .join(" · ")}
+            . Medido em minutos estimados, não em número de tarefas.
           </p>
           <Panel>
             {Object.entries(byCat).map(([c, v]) => {
-              const sum = v.a + v.b;
+              const sum = Object.values(v).reduce((x, y) => x + y, 0);
               return (
                 <div key={c} className="cat">
                   <span>
                     {CATEGORY_NAMES[c as keyof typeof CATEGORY_NAMES] ?? c}
                   </span>
                   <div className="cbar">
-                    <i
-                      className="pa"
-                      style={{ width: `${(v.a / sum) * 100}%` }}
-                    />
-                    <i
-                      className="pb"
-                      style={{ width: `${(v.b / sum) * 100}%` }}
-                    />
+                    {people.map((m) => (
+                      <i
+                        key={m.id}
+                        className={`p${m.slot}`}
+                        style={{ width: `${((v[m.id] ?? 0) / sum) * 100}%` }}
+                      />
+                    ))}
                   </div>
                 </div>
               );

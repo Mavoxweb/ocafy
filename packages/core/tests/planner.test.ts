@@ -274,3 +274,53 @@ describe("planner — diff, resumo e agrupamento", () => {
     expect(g.some((x) => x.key === "casa")).toBe(true);
   });
 });
+
+describe("família: tarefas por idade", () => {
+  const family = (
+    kids: { id: string; ageBand: import("../src/index").AgeBand }[],
+  ) =>
+    generatePlan({
+      profile: { ...DEFAULT_PROFILE, mode: "family" },
+      rooms: roomsFromCounts(defaultRoomCounts("apartment", "m")),
+      pets: [],
+      kids,
+    });
+
+  it("sem crianças não há tarefas infantis", () => {
+    expect(ids(family([]))).not.toContain("kid_brinquedos");
+  });
+
+  it("criança pequena ativa só as tarefas simples; mais velha, as mais avançadas", () => {
+    const small = ids(family([{ id: "k1", ageBand: "child_4_6" }]));
+    expect(small).toContain("kid_brinquedos");
+    expect(small).toContain("kid_cesto");
+    expect(small).not.toContain("kid_mesa");
+    expect(small).not.toContain("kid_quarto");
+
+    const older = ids(family([{ id: "k1", ageBand: "child_10_12" }]));
+    expect(older).toEqual(expect.arrayContaining(["kid_mesa", "kid_quarto"]));
+    expect(older).not.toContain("kid_banheiro");
+  });
+
+  it("a maior faixa presente vale para a casa toda", () => {
+    const p = ids(
+      family([
+        { id: "k1", ageBand: "child_4_6" },
+        { id: "k2", ageBand: "teen_13_17" },
+      ]),
+    );
+    expect(p).toContain("kid_banheiro");
+  });
+
+  it("tarefas existentes carregam a faixa etária sugerida", () => {
+    const t = family([]).find((x) => x.id === "m_cama");
+    expect(t?.suitableFrom).toBe("child_4_6");
+    expect(
+      family([]).find((x) => x.id === "banheiro")?.suitableFrom,
+    ).toBeUndefined();
+  });
+
+  it("modo família mantém a divisão das roupas entre dois adultos", () => {
+    expect(ids(family([]))).toContain("roupa_b");
+  });
+});

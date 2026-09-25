@@ -1,4 +1,5 @@
 import {
+  type AgeBand,
   type Coat,
   DEFAULT_PROFILE,
   type DogSize,
@@ -27,10 +28,7 @@ import type { AppState } from "./store";
  * Tudo aqui é puro — a prévia do plano usa o mesmo motor de rotinas do servidor.
  */
 
-/** Família chega na próxima versão: por enquanto só Solo e Casal. */
-export type EditableProfile = Omit<HouseProfile, "mode"> & {
-  mode: "solo" | "couple";
-};
+export type EditableProfile = HouseProfile;
 
 export interface PetDraft {
   /** Chave local (estável na edição). */
@@ -45,18 +43,25 @@ export interface PetDraft {
   litter: PetLitter;
 }
 
+export interface KidDraft {
+  key: string;
+  /** Id no servidor, se já existe. */
+  id?: string;
+  name: string;
+  ageBand: AgeBand;
+}
+
 export interface HouseDraft {
   profile: EditableProfile;
   counts: RoomCounts;
   /** Apelidos por slug (só os digitados). */
   labels: Record<string, string>;
   pets: PetDraft[];
+  /** Perfis de criança (só no modo Família). */
+  kids: KidDraft[];
 }
 
-const editable = (p: HouseProfile): EditableProfile => ({
-  ...p,
-  mode: p.mode === "solo" ? "solo" : "couple",
-});
+const editable = (p: HouseProfile): EditableProfile => ({ ...p });
 
 export function initialDraft(): HouseDraft {
   const profile = editable(DEFAULT_PROFILE);
@@ -65,6 +70,7 @@ export function initialDraft(): HouseDraft {
     counts: defaultRoomCounts(profile.dwelling, profile.size),
     labels: {},
     pets: [],
+    kids: [],
   };
 }
 
@@ -108,6 +114,11 @@ export function draftFromTemplate(id: string): HouseDraft {
       outdoorAccess: p.outdoorAccess ?? false,
       litter: p.litter ?? "litter",
     })),
+    kids: (tpl.kids ?? []).map((k) => ({
+      key: uid(),
+      name: k.name,
+      ageBand: k.ageBand,
+    })),
   };
 }
 
@@ -136,8 +147,27 @@ export function draftFromState(s: AppState): HouseDraft {
       outdoorAccess: p.outdoorAccess ?? false,
       litter: p.litter ?? "litter",
     })),
+    kids: s.members
+      .filter((m) => m.kind === "profile" && m.ageBand)
+      .map((m) => ({
+        key: m.id,
+        id: m.id,
+        name: m.name,
+        ageBand: m.ageBand as AgeBand,
+      })),
   };
 }
+
+/** Crianças só existem no modo Família. */
+export const familyKids = (d: HouseDraft): KidDraft[] =>
+  d.profile.mode === "family" ? d.kids : [];
+
+/** Assinatura do rascunho (para saber se há mudanças a salvar). */
+export const draftSignature = (d: HouseDraft): string =>
+  JSON.stringify([
+    draftToInput(d),
+    familyKids(d).map((k) => [k.id ?? "", k.name.trim(), k.ageBand]),
+  ]);
 
 export const draftRooms = (d: HouseDraft): RoomInstance[] =>
   roomsFromCounts(d.counts, d.labels);
@@ -158,6 +188,10 @@ export const draftPlan = (d: HouseDraft): PlannedTask[] =>
     profile: d.profile,
     rooms: draftRooms(d),
     pets: draftPets(d),
+    kids: familyKids(d).map((k) => ({
+      id: k.id ?? k.key,
+      ageBand: k.ageBand,
+    })),
   });
 
 /** Payload da API (cômodos em ordem, com apelido só onde o usuário digitou). */

@@ -2,6 +2,7 @@ import { publicProcedure, router } from "../trpc";
 import { householdRouter } from "./household";
 import { litterRouter } from "./litter";
 import { mealsRouter } from "./meals";
+import { membersRouter } from "./members";
 import { officeRouter } from "./office";
 import { socialRouter } from "./social";
 import { storeRouter } from "./store";
@@ -16,6 +17,7 @@ export const appRouter = router({
   tasks: tasksRouter,
   meals: mealsRouter,
   litter: litterRouter,
+  members: membersRouter,
   office: officeRouter,
   store: storeRouter,
   social: socialRouter,

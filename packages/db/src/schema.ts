@@ -59,12 +59,22 @@ export const householdMembers = pgTable(
     householdId: uuid("household_id")
       .references(() => households.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id").notNull(), // id do usuário no Neon Auth
+    /** id do usuário no Neon Auth. Nulo nos perfis de criança (sem login). */
+    userId: text("user_id"),
+    /** account = adulto com login; profile = perfil de criança gerenciado por um responsável. */
+    kind: text("kind", { enum: ["account", "profile"] })
+      .default("account")
+      .notNull(),
+    ageBand: text("age_band", {
+      enum: ["child_4_6", "child_7_9", "child_10_12", "teen_13_17"],
+    }),
     displayName: text("display_name").notNull(),
     role: text("role", { enum: ["owner", "member"] })
       .default("member")
       .notNull(),
-    slot: text("slot", { enum: ["a", "b"] }).notNull(),
+    slot: text("slot", {
+      enum: ["a", "b", "c", "d", "e", "f", "g", "h"],
+    }).notNull(),
     /** Foto de perfil já recortada/reduzida no cliente (base64). Nunca vai no snapshot: sai por /api/avatar/:id. */
     avatarData: text("avatar_data"),
     avatarType: text("avatar_type"),
@@ -158,6 +168,23 @@ export const taskOverrides = pgTable(
     isPaused: boolean("is_paused").default(false).notNull(),
   },
   (t) => [uniqueIndex("task_overrides_uq").on(t.householdId, t.taskKey)],
+);
+
+/** Quem cuida de cada tarefa (ex.: "guardar os brinquedos" → a criança). Uma pessoa por tarefa. */
+export const taskAssignments = pgTable(
+  "task_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    taskKey: text("task_key").notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("task_assignments_uq").on(t.householdId, t.taskKey)],
 );
 
 export const completions = pgTable(

@@ -2,6 +2,7 @@
 
 import {
   HouseFields,
+  KidsEditor,
   ModePicker,
   PetsEditor,
   PlanPreview,
@@ -29,6 +30,7 @@ type StepId =
   | "convite"
   | "modelo"
   | "nomes"
+  | "criancas"
   | "casa"
   | "comodos"
   | "pets"
@@ -38,6 +40,7 @@ type StepId =
 const STEPS: StepId[] = [
   "modelo",
   "nomes",
+  "criancas",
   "casa",
   "comodos",
   "pets",
@@ -111,8 +114,13 @@ function Onboarding() {
       setDraft((d) => ({ ...d, counts: defaultRoomCounts(dwelling, size) }));
   };
 
-  const creating = STEPS.includes(step);
-  const idx = STEPS.indexOf(step);
+  // Crianças só fazem parte do caminho no modo Família.
+  const steps =
+    draft.profile.mode === "family"
+      ? STEPS
+      : STEPS.filter((x) => x !== "criancas");
+  const creating = steps.includes(step);
+  const idx = steps.indexOf(step);
   const nRooms = Object.values(draft.counts).reduce((a, b) => a + (b ?? 0), 0);
 
   const valid =
@@ -173,13 +181,13 @@ function Onboarding() {
     if (!valid || busy) return;
     if (step === "convite") void join();
     else if (step === "previa") void finish();
-    else if (creating) setStep(STEPS[idx + 1]);
+    else if (creating) setStep(steps[idx + 1]);
   };
 
   const back = () => {
     setError("");
     if (step === "convite" || step === "modelo") setStep("inicio");
-    else if (creating) setStep(STEPS[idx - 1]);
+    else if (creating) setStep(steps[idx - 1]);
   };
 
   if (s.status === "loading" || s.status === "ready" || s.status === "anon") {
@@ -199,10 +207,10 @@ function Onboarding() {
       {creating && (
         <>
           <p className="sr-only">
-            Etapa {idx + 1} de {STEPS.length}
+            Etapa {idx + 1} de {steps.length}
           </p>
           <div className="mb-3 flex justify-center gap-1.5" aria-hidden="true">
-            {STEPS.map((st, i) => (
+            {steps.map((st, i) => (
               <span
                 key={st}
                 className="h-1.5 rounded-pill transition-all"
@@ -342,6 +350,18 @@ function Onboarding() {
                 de convite — cada uma usa o seu aparelho.
               </p>
             )}
+          </>
+        )}
+
+        {step === "criancas" && (
+          <>
+            <h1 className="text-[1.5rem]">Quem são as crianças?</h1>
+            <p className="meta">
+              Opcional: você pode adicionar depois em Minha casa.
+            </p>
+            <div className="mt-3.5">
+              <KidsEditor draft={draft} patch={patch} />
+            </div>
           </>
         )}
 
