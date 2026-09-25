@@ -234,6 +234,15 @@ export function SettingsSheet() {
           você é o(a) único(a) adulto(a) da casa, a casa inteira também.
         </p>
       )}
+      <p className="meta">
+        <Link href="/termos" className="link" style={{ padding: 0 }}>
+          Termos de Uso
+        </Link>{" "}
+        ·{" "}
+        <Link href="/privacidade" className="link" style={{ padding: 0 }}>
+          Política de Privacidade
+        </Link>
+      </p>
       {privacyMsg && <output className="meta block">{privacyMsg}</output>}
 
       <h4>Método</h4>

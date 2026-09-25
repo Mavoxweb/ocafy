@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { LEGAL_VERSION } from "@ocafy/core";
 import { DEFAULT_PROFILE } from "@ocafy/core";
 import {
   adminAuditLog,
@@ -47,6 +48,7 @@ async function newHouse(name: string) {
   const userId = `test-${randomUUID()}`;
   const c = caller({ userId });
   const { householdId } = await c.household.create({
+    acceptedLegalVersion: LEGAL_VERSION,
     houseName: name,
     memberName: "Alex",
     profile: { ...DEFAULT_PROFILE, mode: "couple" },
@@ -320,6 +322,7 @@ describe.skipIf(!enabled)("painel admin (Neon dev)", () => {
       const u = caller({ userId: `test-${randomUUID()}` });
       const err = await u.household
         .create({
+          acceptedLegalVersion: LEGAL_VERSION,
           houseName: "Fechada",
           memberName: "Xu",
           profile: { ...DEFAULT_PROFILE, mode: "couple" },
@@ -351,6 +354,7 @@ describe.skipIf(!enabled)("painel admin (Neon dev)", () => {
     const authId = await newAuthUser(email);
     const c = caller({ userId: authId });
     const { householdId } = await c.household.create({
+      acceptedLegalVersion: LEGAL_VERSION,
       houseName: "Casa do Titular",
       memberName: "Titular",
       profile: { ...DEFAULT_PROFILE, mode: "couple" },
@@ -439,7 +443,11 @@ describe.skipIf(!enabled)("painel admin (Neon dev)", () => {
     const { code } = await a.c.household.createInvite();
     const bId = await newAuthUser(`b-${runId}@test.local`);
     const b = caller({ userId: bId });
-    await b.household.join({ code, memberName: "Bia" });
+    await b.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code,
+      memberName: "Bia",
+    });
     const owned = await deleteAccountData(a.userId);
     expect(owned).toMatchObject({
       removedMember: true,

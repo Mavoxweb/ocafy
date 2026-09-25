@@ -28,6 +28,7 @@ import { sendEmail } from "../email/send";
 import { inviteEmail } from "../email/templates";
 import { assertWithinPlan, loadEntitlements } from "../entitlements";
 import { flag } from "../flags";
+import { assertCurrentVersion, recordAcceptance } from "../legal";
 import { fullMessage, limitsOf, loadRoster } from "../roster";
 import {
   createHouseholdSchema,
@@ -154,6 +155,8 @@ export const householdRouter = router({
           message: "Novos cadastros estão temporariamente fechados.",
         });
       }
+      assertCurrentVersion(input.acceptedLegalVersion);
+      await recordAcceptance(ctx.userId, "onboarding");
       const householdId = randomUUID();
       const built = buildRooms(input.rooms);
       const cats = input.pets.filter((p) => p.species === "cat").length;
@@ -224,6 +227,7 @@ export const householdRouter = router({
     }),
 
   join: authedProcedure.input(joinSchema).mutation(async ({ ctx, input }) => {
+    assertCurrentVersion(input.acceptedLegalVersion);
     const code = input.code.toUpperCase().replace(/\s/g, "");
     const [invite] = await db
       .select()
@@ -284,6 +288,7 @@ export const householdRouter = router({
       }
       throw e;
     }
+    await recordAcceptance(ctx.userId, "join");
     return { householdId: invite.householdId };
   }),
 

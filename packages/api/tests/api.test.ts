@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { LEGAL_VERSION } from "@ocafy/core";
 import {
   DEFAULT_PROFILE,
   type HouseProfile,
@@ -65,6 +66,7 @@ async function newHouse(
   const userId = `test-${randomUUID()}`;
   const c = as(userId);
   const { householdId } = await c.household.create({
+    acceptedLegalVersion: LEGAL_VERSION,
     houseName: name,
     memberName: "Alex",
     profile: { ...DEFAULT_PROFILE, mode: "couple", ...over.profile },
@@ -149,6 +151,7 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     expect(
       await code(() =>
         as(userId).household.create({
+          acceptedLegalVersion: LEGAL_VERSION,
           houseName: "Outra",
           memberName: "Alex",
           profile: { ...DEFAULT_PROFILE, mode: "couple" },
@@ -268,10 +271,15 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const partner = as(partnerId);
     expect(
       await code(() =>
-        partner.household.join({ code: "ZZZZZZZZ", memberName: "Bia" }),
+        partner.household.join({
+          acceptedLegalVersion: LEGAL_VERSION,
+          code: "ZZZZZZZZ",
+          memberName: "Bia",
+        }),
       ),
     ).toBe("NOT_FOUND");
     await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
       code: inviteCode.toLowerCase(),
       memberName: "Bia",
     });
@@ -290,7 +298,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const third = as(`test-${randomUUID()}`);
     expect(
       await code(() =>
-        third.household.join({ code: inviteCode, memberName: "Cris" }),
+        third.household.join({
+          acceptedLegalVersion: LEGAL_VERSION,
+          code: inviteCode,
+          memberName: "Cris",
+        }),
       ),
     ).toBe("NOT_FOUND");
     expect(await code(() => owner.c.household.createInvite())).toBe("CONFLICT");
@@ -302,7 +314,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const owner = await newHouse("Casa Loja");
     const { code: inviteCode } = await owner.c.household.createInvite();
     const partner = as(`test-${randomUUID()}`);
-    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: inviteCode,
+      memberName: "Bia",
+    });
 
     const snap0 = await owner.c.household.snapshot();
     if (snap0.status !== "ready") throw new Error();
@@ -340,7 +356,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const owner = await newHouse("Casa Social");
     const { code: inviteCode } = await owner.c.household.createInvite();
     const partner = as(`test-${randomUUID()}`);
-    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: inviteCode,
+      memberName: "Bia",
+    });
 
     const { id } = await owner.c.tasks.complete({
       taskKey: "lixo",
@@ -461,7 +481,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const { code: inviteCode } = await owner.c.household.createInvite();
     const partnerId = `test-${randomUUID()}`;
     const partner = as(partnerId);
-    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: inviteCode,
+      memberName: "Bia",
+    });
     const outsider = await newHouse("Casa Alheia");
 
     // rejeita: tipo não suportado, mime que não bate com os bytes, gigante, minúsculo
@@ -620,6 +644,7 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const couple = await newHouse("Casa Dois", null);
     const { code: inviteCode } = await couple.c.household.createInvite();
     await as(`test-${randomUUID()}`).household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
       code: inviteCode,
       memberName: "Bia",
     });
@@ -762,10 +787,12 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
       profile: { mode: "family" },
     });
     const bia = await owner.c.members.addProfile({
+      guardianDeclaration: true,
       name: "Bia",
       ageBand: "child_4_6",
     });
     const leo = await owner.c.members.addProfile({
+      guardianDeclaration: true,
       name: "Leo",
       ageBand: "child_10_12",
     });
@@ -875,7 +902,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const couple = await newHouse("Casa de Casal", null);
     expect(
       await code(() =>
-        couple.c.members.addProfile({ name: "Bia", ageBand: "child_4_6" }),
+        couple.c.members.addProfile({
+          guardianDeclaration: true,
+          name: "Bia",
+          ageBand: "child_4_6",
+        }),
       ),
     ).toBe("PRECONDITION_FAILED");
 
@@ -884,20 +915,29 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     });
     for (let i = 0; i < 6; i++)
       await fam.c.members.addProfile({
+        guardianDeclaration: true,
         name: `Criança ${i + 1}`,
         ageBand: "child_7_9",
       });
     // 1 adulto + 6 perfis = 7 slots; o 7º perfil bate no limite de perfis
     expect(
       await code(() =>
-        fam.c.members.addProfile({ name: "Sobra", ageBand: "child_7_9" }),
+        fam.c.members.addProfile({
+          guardianDeclaration: true,
+          name: "Sobra",
+          ageBand: "child_7_9",
+        }),
       ),
     ).toBe("CONFLICT");
 
     // adultos: entram até 4 (os slots dos perfis já foram usados, sobra 1 livre)
     const { code: c1 } = await fam.c.household.createInvite();
     const p2 = as(`test-${randomUUID()}`);
-    await p2.household.join({ code: c1, memberName: "Bia" });
+    await p2.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: c1,
+      memberName: "Bia",
+    });
     const snap = await fam.c.household.snapshot();
     if (snap.status !== "ready") throw new Error();
     // o slot livre mais baixo foi entregue (b..g ocupados pelos perfis → h)
@@ -917,7 +957,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const inv = await fam.c.household.createInvite();
     expect(
       await code(() =>
-        p3.household.join({ code: inv.code, memberName: "Cris" }),
+        p3.household.join({
+          acceptedLegalVersion: LEGAL_VERSION,
+          code: inv.code,
+          memberName: "Cris",
+        }),
       ),
     ).toBe("CONFLICT");
   });
@@ -928,10 +972,18 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     });
     const { code: c1 } = await owner.c.household.createInvite();
     const a2 = as(`test-${randomUUID()}`);
-    await a2.household.join({ code: c1, memberName: "Bia" });
+    await a2.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: c1,
+      memberName: "Bia",
+    });
     const { code: c2 } = await owner.c.household.createInvite();
     const a3 = as(`test-${randomUUID()}`);
-    await a3.household.join({ code: c2, memberName: "Cris" });
+    await a3.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: c2,
+      memberName: "Cris",
+    });
 
     // com 2 outros adultos é preciso escolher
     expect(
@@ -956,7 +1008,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     const owner = await newHouse("Casa Compras", null);
     const { code: inviteCode } = await owner.c.household.createInvite();
     const partner = as(`test-${randomUUID()}`);
-    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: inviteCode,
+      memberName: "Bia",
+    });
 
     const leite = await owner.c.shopping.add({
       name: "Leite",
@@ -1090,7 +1146,11 @@ describe.skipIf(!enabled)("API (Neon dev)", () => {
     // perfil de criança novo também é do Plus
     expect(
       await code(() =>
-        c.members.addProfile({ name: "Bia", ageBand: "child_4_6" }),
+        c.members.addProfile({
+          guardianDeclaration: true,
+          name: "Bia",
+          ageBand: "child_4_6",
+        }),
       ),
     ).toBe("FORBIDDEN");
 

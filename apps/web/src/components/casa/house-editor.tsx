@@ -17,6 +17,7 @@ import {
   DOG_SIZES,
   DOG_SIZE_ORDER,
   DWELLING_LABELS,
+  GUARDIAN_DECLARATION,
   INTENSITY_LABELS,
   type Intensity,
   MODE_LABELS,
@@ -116,6 +117,18 @@ export function KidsEditor({
           )}
         </div>
       ))}
+      {draft.kids.some((k) => !k.id) && (
+        <label className="legal-check">
+          <input
+            type="checkbox"
+            checked={draft.guardianDeclared}
+            onChange={(e) =>
+              patch((d) => ({ ...d, guardianDeclared: e.target.checked }))
+            }
+          />
+          <span>{GUARDIAN_DECLARATION}</span>
+        </label>
+      )}
       {draft.kids.length < max && (
         <button type="button" className="btn btn-small" onClick={add}>
           + Adicionar criança

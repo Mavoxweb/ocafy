@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { LEGAL_VERSION } from "@ocafy/core";
 import { DEFAULT_PROFILE } from "@ocafy/core";
 import { db, households } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
@@ -57,6 +58,7 @@ async function newHouse(name: string) {
   const userId = `test-${randomUUID()}`;
   const c = as(userId);
   const { householdId } = await c.household.create({
+    acceptedLegalVersion: LEGAL_VERSION,
     houseName: name,
     memberName: "Alex",
     profile: { ...DEFAULT_PROFILE, mode: "couple" },
@@ -295,7 +297,11 @@ describe.skipIf(!enabled)("avisos e agenda (Neon dev)", () => {
     const { code: inviteCode } = await owner.c.household.createInvite();
     const partnerId = `test-${randomUUID()}`;
     const partner = as(partnerId);
-    await partner.household.join({ code: inviteCode, memberName: "Bia" });
+    await partner.household.join({
+      acceptedLegalVersion: LEGAL_VERSION,
+      code: inviteCode,
+      memberName: "Bia",
+    });
 
     const ownerSub = sub("owner");
     const partnerSub = sub("partner");

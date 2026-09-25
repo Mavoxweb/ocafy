@@ -8,3 +8,4 @@ export * from "./shopping";
 export * from "./notify";
 export * from "./plans";
 export * from "./billing";
+export * from "./legal";

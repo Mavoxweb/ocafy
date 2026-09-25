@@ -1,6 +1,12 @@
+import { LEGAL_VERSION } from "@ocafy/core";
 import { dataRequests, db } from "@ocafy/db";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import {
+  assertCurrentVersion,
+  hasAcceptedCurrent,
+  recordAcceptance,
+} from "../legal";
 import { exportAccountData, openDataRequest } from "../lgpd";
 import { authedProcedure, router } from "../trpc";
 
@@ -39,6 +45,23 @@ export const accountRouter = router({
         status: r.status,
         dueAt: r.dueAt.toISOString(),
       };
+    }),
+
+  /** Versão vigente dos documentos legais e se esta pessoa já aceitou. */
+  legalStatus: authedProcedure.query(async ({ ctx }) => ({
+    version: LEGAL_VERSION,
+    accepted: await hasAcceptedCurrent(ctx.userId),
+  })),
+
+  /** Aceite da versão vigente (usado quando os documentos mudam para quem já usa o app). */
+  acceptLegal: authedProcedure
+    .input(z.object({ version: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      assertCurrentVersion(input.version);
+      if (!(await hasAcceptedCurrent(ctx.userId))) {
+        await recordAcceptance(ctx.userId, "update");
+      }
+      return { version: LEGAL_VERSION, accepted: true };
     }),
 
   myRequests: authedProcedure.query(async ({ ctx }) => {

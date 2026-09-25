@@ -15,6 +15,7 @@ import {
   type HouseDraft,
   draftFromState,
   draftSignature,
+  needsGuardian,
 } from "@/lib/house-draft";
 import { ADULT_LIMIT, adultsOf, planOf } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
@@ -47,7 +48,8 @@ export default function CasaPage() {
   const limit = ADULT_LIMIT[draft.profile.mode as keyof typeof ADULT_LIMIT];
   const soloBlocked = adults > limit;
   const namesOk = draft.pets.every((p) => p.name.trim().length > 0);
-  const canSave = dirty && !busy && !soloBlocked && namesOk;
+  const canSave =
+    dirty && !busy && !soloBlocked && namesOk && !needsGuardian(draft);
   const before = planOf(s).list;
 
   async function save() {

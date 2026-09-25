@@ -59,6 +59,8 @@ export interface HouseDraft {
   pets: PetDraft[];
   /** Perfis de criança (só no modo Família). */
   kids: KidDraft[];
+  /** O adulto declarou ser o responsável legal (LGPD, art. 14, § 1º). */
+  guardianDeclared: boolean;
 }
 
 const editable = (p: HouseProfile): EditableProfile => ({ ...p });
@@ -71,6 +73,7 @@ export function initialDraft(): HouseDraft {
     labels: {},
     pets: [],
     kids: [],
+    guardianDeclared: false,
   };
 }
 
@@ -119,6 +122,7 @@ export function draftFromTemplate(id: string): HouseDraft {
       name: k.name,
       ageBand: k.ageBand,
     })),
+    guardianDeclared: false,
   };
 }
 
@@ -155,12 +159,17 @@ export function draftFromState(s: AppState): HouseDraft {
         name: m.name,
         ageBand: m.ageBand as AgeBand,
       })),
+    guardianDeclared: false,
   };
 }
 
 /** Crianças só existem no modo Família. */
 export const familyKids = (d: HouseDraft): KidDraft[] =>
   d.profile.mode === "family" ? d.kids : [];
+
+/** Há perfil de criança novo que ainda precisa da declaração do responsável? */
+export const needsGuardian = (d: HouseDraft): boolean =>
+  familyKids(d).some((k) => !k.id) && !d.guardianDeclared;
 
 /** Assinatura do rascunho (para saber se há mudanças a salvar). */
 export const draftSignature = (d: HouseDraft): string =>

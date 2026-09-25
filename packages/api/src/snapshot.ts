@@ -1,3 +1,4 @@
+import { LEGAL_VERSION } from "@ocafy/core";
 import type {
   AgeBand,
   BillingInterval,
@@ -44,6 +45,8 @@ import {
 } from "@ocafy/db";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { checkoutUrls, resolveFromRows } from "./entitlements";
+import { flag } from "./flags";
+import { hasAcceptedCurrent } from "./legal";
 import { prefsFromRow } from "./notifications";
 import { petOf, profileOf, roomsOf } from "./plan";
 import { pushConfigured, vapidPublicKey } from "./push";
@@ -168,6 +171,8 @@ export interface Snapshot {
       note: string | null;
     }[];
   };
+  /** Documentos legais: versão vigente, se a pessoa aceitou e se o bloqueio está ligado. */
+  legal: { version: string; accepted: boolean; gate: boolean };
   /** Casa suspensa pelo administrador (só leitura). */
   suspended: { reason: string | null } | null;
   /** Plano efetivo (calculado no servidor) e o que o app pode oferecer. */
@@ -196,6 +201,11 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
   const hid = sql`(select ${householdMembers.householdId} from ${householdMembers} where ${householdMembers.userId} = ${userId})`;
   const me = sql`(select ${householdMembers.id} from ${householdMembers} where ${householdMembers.userId} = ${userId})`;
   const now = new Date();
+  // Aceite dos documentos legais (fora do lote: tabela por usuário, não por casa).
+  const [legalAccepted, legalGate] = await Promise.all([
+    hasAcceptedCurrent(userId),
+    flag("legal_gate", false),
+  ]);
 
   const [
     memberRows,
@@ -455,6 +465,11 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
           note: a.note,
         }))
         .sort((a, b) => (a.from < b.from ? -1 : 1)),
+    },
+    legal: {
+      version: LEGAL_VERSION,
+      accepted: legalAccepted,
+      gate: legalGate,
     },
     suspended: household.suspendedAt
       ? { reason: household.suspendedReason }

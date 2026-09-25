@@ -85,3 +85,13 @@ A mesma chamada encerra carências vencidas e envia os avisos de cobrança.
 2. `POST /api/webhooks/cakto` sem segredo → `401`; com segredo e evento de teste → `200`.
 3. No painel: Visão geral carrega; **Saúde** mostra as chaves como `ok`.
 4. Em `/lembretes` no app, ative os avisos e use *Enviar aviso de teste*.
+
+## 7. Termos de Uso, Política de Privacidade e aceite (LGPD)
+
+- Páginas públicas: `/termos` e `/privacidade`. Texto-fonte: `packages/core/src/legal.ts`;
+  arquivos `docs/legal/*.md` são gerados (`pnpm --filter @ocafy/core legal:export`).
+- **Antes de divulgar o app:** preencher `LEGAL_CONTROLLER_NAME`, `LEGAL_CNPJ`, `LEGAL_ADDRESS`,
+  `LEGAL_CONTACT_EMAIL`, `LEGAL_DPO_NAME`, `LEGAL_DPO_EMAIL` na Vercel e enviar `docs/legal/` para revisão
+  de um(a) advogado(a) (`docs/legal/REVISAO-JURIDICA.md`).
+- Contas novas **sempre** aceitam no onboarding (o servidor exige). Para exigir novo aceite de quem já
+  usa, ligue a chave **`legal_gate`** no painel (vem desligada) — só depois da revisão jurídica.

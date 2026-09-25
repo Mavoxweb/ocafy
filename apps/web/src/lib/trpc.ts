@@ -28,6 +28,8 @@ export function errorMessage(e: unknown, fallback: string): string {
       ? Object.values(zod.fieldErrors).flat()[0]
       : undefined;
     if (first) return first;
+    if (e.message === "LEGAL_VERSION_MISMATCH")
+      return "Os Termos foram atualizados. Recarregue a página e aceite a nova versão.";
     if (e.message === "MAINTENANCE")
       return "O Ocafy está em manutenção. Tente de novo em alguns minutos.";
     if (e.message === "HOUSEHOLD_SUSPENDED")

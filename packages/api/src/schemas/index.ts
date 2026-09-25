@@ -77,6 +77,8 @@ export const petsInput = z.array(petInput).max(12);
 export const createHouseholdSchema = z.object({
   houseName: z.string().trim().min(2, "Nome da casa muito curto").max(40),
   memberName: z.string().trim().min(2, "Seu nome é obrigatório").max(24),
+  /** Versão dos Termos/Política que a pessoa aceitou na tela (o servidor confere). */
+  acceptedLegalVersion: z.string().min(1),
   profile: profileInput,
   rooms: roomsInput,
   pets: petsInput,
@@ -98,6 +100,15 @@ export const onboardingStepSchema = z.object({
 export const memberProfileSchema = z.object({
   name: z.string().trim().min(1, "Dê um nome").max(20),
   ageBand: z.enum(["child_4_6", "child_7_9", "child_10_12", "teen_13_17"]),
+});
+
+/** Criar perfil de criança exige a declaração do responsável (LGPD, art. 14, § 1º). */
+export const addProfileSchema = memberProfileSchema.extend({
+  guardianDeclaration: z.literal(true, {
+    errorMap: () => ({
+      message: "Confirme que você é o responsável legal pela criança.",
+    }),
+  }),
 });
 
 export const shoppingItemSchema = z.object({
@@ -185,6 +196,7 @@ export const absenceSchema = z.object({
 
 export const joinSchema = z.object({
   code: z.string().trim().min(4).max(16),
+  acceptedLegalVersion: z.string().min(1),
   memberName: z.string().trim().min(2, "Seu nome é obrigatório").max(24),
 });
 

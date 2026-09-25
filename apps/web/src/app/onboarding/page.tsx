@@ -9,6 +9,7 @@ import {
   RhythmFields,
   RoomGrid,
 } from "@/components/casa/house-editor";
+import { LegalCheck } from "@/components/legal/legal-check";
 import { Splash } from "@/components/shell/splash";
 import { OcafySymbol } from "@/components/ui/logo";
 import { Field } from "@/components/ui/primitives";
@@ -18,6 +19,7 @@ import {
   type HouseDraft,
   draftFromTemplate,
   initialDraft,
+  needsGuardian,
 } from "@/lib/house-draft";
 import { useAppState } from "@/lib/store";
 import { errorMessage } from "@/lib/trpc";
@@ -75,6 +77,7 @@ function Onboarding() {
   const [houseName, setHouseName] = useState("");
   const [myName, setMyName] = useState("");
   const [code, setCode] = useState(inviteFromLink);
+  const [legalOk, setLegalOk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -127,12 +130,14 @@ function Onboarding() {
     step === "nomes"
       ? houseName.trim().length >= 2 && myName.trim().length >= 2
       : step === "convite"
-        ? code.trim().length >= 4 && myName.trim().length >= 2
-        : step === "pets"
-          ? draft.pets.every((p) => p.name.trim().length > 0)
-          : step === "comodos"
-            ? nRooms > 0
-            : true;
+        ? code.trim().length >= 4 && myName.trim().length >= 2 && legalOk
+        : step === "criancas"
+          ? !needsGuardian(draft)
+          : step === "pets"
+            ? draft.pets.every((p) => p.name.trim().length > 0)
+            : step === "comodos"
+              ? nRooms > 0
+              : true;
 
   function pickTemplate(id: string | null) {
     setFromTemplate(id !== null);
@@ -243,6 +248,7 @@ function Onboarding() {
                 type="button"
                 className="btn btn-primary btn-block"
                 style={{ margin: 0 }}
+                disabled={!legalOk}
                 onClick={() => setStep("modelo")}
               >
                 Criar uma casa
@@ -251,10 +257,14 @@ function Onboarding() {
                 type="button"
                 className="btn btn-block"
                 style={{ margin: 0 }}
+                disabled={!legalOk}
                 onClick={() => setStep("convite")}
               >
                 Tenho um código de convite
               </button>
+            </div>
+            <div className="mt-4">
+              <LegalCheck checked={legalOk} onChange={setLegalOk} />
             </div>
           </>
         )}
@@ -285,6 +295,7 @@ function Onboarding() {
                   onChange={(e) => setMyName(e.target.value)}
                 />
               </Field>
+              <LegalCheck checked={legalOk} onChange={setLegalOk} />
             </div>
           </>
         )}

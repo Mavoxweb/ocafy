@@ -765,3 +765,31 @@ export const supportNotes = pgTable(
   },
   (t) => [index("support_notes_household_idx").on(t.householdId)],
 );
+
+/**
+ * Prova do aceite dos documentos legais (LGPD, art. 8º, § 2º: o ônus da prova é do controlador).
+ * Guarda QUEM aceitou, QUAL documento, qual VERSÃO e o hash do texto exato, e QUANDO.
+ * `guardian` = declaração do responsável ao criar perfil de criança (art. 14, § 1º); `subject` é o
+ * id do perfil. Registros não são apagados ao trocar de versão: o histórico é a evidência.
+ */
+export const legalAcceptances = pgTable(
+  "legal_acceptances",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id").notNull(),
+    document: text("document", {
+      enum: ["terms", "privacy", "guardian"],
+    }).notNull(),
+    version: text("version").notNull(),
+    /** SHA-256 do texto do documento naquela versão. */
+    contentHash: text("content_hash").notNull(),
+    context: text("context", {
+      enum: ["onboarding", "join", "update", "guardian"],
+    }).notNull(),
+    subject: text("subject"),
+    acceptedAt: timestamp("accepted_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("legal_acceptances_user_idx").on(t.userId, t.document, t.version),
+  ],
+);

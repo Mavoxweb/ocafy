@@ -149,6 +149,15 @@ export function AuthForm({ mode }: { mode: "in" | "up" }) {
             {mode === "in" ? "Criar conta" : "Entrar"}
           </Link>
         </p>
+        <p className="meta text-center" style={{ fontSize: "0.78rem" }}>
+          <Link href="/termos" className="link" style={{ padding: 0 }}>
+            Termos de Uso
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacidade" className="link" style={{ padding: 0 }}>
+            Política de Privacidade
+          </Link>
+        </p>
       </form>
     </main>
   );

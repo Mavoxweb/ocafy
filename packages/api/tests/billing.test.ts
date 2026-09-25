@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { LEGAL_VERSION } from "@ocafy/core";
 import {
   DEFAULT_PROFILE,
   GRACE_DAYS,
@@ -56,6 +57,7 @@ async function newSubscriberHouse(name: string) {
   const userId = `test-${randomUUID()}`;
   const c = caller({ userId });
   const { householdId } = await c.household.create({
+    acceptedLegalVersion: LEGAL_VERSION,
     houseName: name,
     memberName: "Alex",
     profile: { ...DEFAULT_PROFILE, mode: "couple" },

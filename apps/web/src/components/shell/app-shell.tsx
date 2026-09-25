@@ -1,5 +1,6 @@
 "use client";
 
+import { LegalGate } from "@/components/legal/legal-gate";
 import { NowProvider } from "@/lib/hooks";
 import { useAppState } from "@/lib/store";
 import { refresh } from "@/lib/sync";
@@ -49,7 +50,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
         </main>
       )}
-      {ready && !s.suspended && (
+      {ready && !s.suspended && s.legal.gate && !s.legal.accepted && (
+        <LegalGate />
+      )}
+      {ready && !s.suspended && !(s.legal.gate && !s.legal.accepted) && (
         <NowProvider>
           <div className="mx-auto max-w-[640px] px-4 pb-40 md:max-w-[760px]">
             <AppBar />

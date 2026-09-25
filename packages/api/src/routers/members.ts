@@ -4,8 +4,9 @@ import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { assertWithinPlan, loadEntitlements } from "../entitlements";
+import { recordGuardian } from "../legal";
 import { loadRoster } from "../roster";
-import { memberProfileSchema, uuid } from "../schemas/index";
+import { addProfileSchema, memberProfileSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
 const profileWhere = (householdId: string, id: string) =>
@@ -21,7 +22,7 @@ const profileWhere = (householdId: string, id: string) =>
  */
 export const membersRouter = router({
   addProfile: memberProcedure
-    .input(memberProfileSchema)
+    .input(addProfileSchema)
     .mutation(async ({ ctx, input }) => {
       const roster = await loadRoster(ctx.householdId);
       // Perfis de criança são do plano Plus (quem já tem os que criou continua vendo e usando).
@@ -63,6 +64,7 @@ export const membersRouter = router({
             slot,
           })
           .returning({ id: householdMembers.id });
+        await recordGuardian(ctx.userId, row.id);
         return { id: row.id };
       } catch (e) {
         const code = (e as { cause?: { code?: string } })?.cause?.code;

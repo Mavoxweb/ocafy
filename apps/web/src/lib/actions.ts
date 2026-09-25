@@ -3,6 +3,7 @@
 import {
   type CompletionEntry,
   type DaySchedule,
+  LEGAL_VERSION,
   type NotifPrefs,
   type ShopCadence,
   type ShopUrgency,
@@ -71,10 +72,12 @@ export async function createHousehold(input: SetupInput) {
     await trpc.household.create.mutate({
       houseName: input.houseName,
       memberName: input.memberName,
+      acceptedLegalVersion: LEGAL_VERSION,
       ...draftToInput(input.draft),
     });
     for (const k of familyKids(input.draft)) {
       await trpc.members.addProfile.mutate({
+        guardianDeclaration: true,
         name: k.name.trim() || "Criança",
         ageBand: k.ageBand,
       });
@@ -116,6 +119,7 @@ export async function saveHouseProfile(draft: HouseDraft) {
         });
       for (const k of added)
         await trpc.members.addProfile.mutate({
+          guardianDeclaration: true,
           name: k.name.trim() || "Criança",
           ageBand: k.ageBand,
         });
@@ -130,7 +134,21 @@ export function trackOnboarding(step: string) {
 }
 
 export async function joinHousehold(code: string, memberName: string) {
-  await mutateStrict(() => trpc.household.join.mutate({ code, memberName }));
+  await mutateStrict(() =>
+    trpc.household.join.mutate({
+      code,
+      memberName,
+      acceptedLegalVersion: LEGAL_VERSION,
+    }),
+  );
+  await refresh({ force: true });
+}
+
+/** Aceite da versão vigente dos Termos e da Política (quem já usa o app). */
+export async function acceptLegalUpdate() {
+  await mutateStrict(() =>
+    trpc.account.acceptLegal.mutate({ version: LEGAL_VERSION }),
+  );
   await refresh({ force: true });
 }
 

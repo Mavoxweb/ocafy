@@ -17,6 +17,7 @@ import {
   shoppingItems,
 } from "@ocafy/db";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { acceptancesOf } from "./legal";
 
 /**
  * LGPD: direitos do titular. `exportAccountData` monta uma cópia legível dos dados da pessoa;
@@ -68,12 +69,13 @@ export async function exportAccountData(userId: string) {
         }
       : { id: userId },
   };
-  const [events, requests] = await Promise.all([
+  const [events, requests, acceptances] = await Promise.all([
     db
       .select()
       .from(onboardingEvents)
       .where(eq(onboardingEvents.userId, userId)),
     db.select().from(dataRequests).where(eq(dataRequests.userId, userId)),
+    acceptancesOf(userId),
   ]);
   if (!me) {
     return {
@@ -81,6 +83,7 @@ export async function exportAccountData(userId: string) {
       household: null,
       onboardingEvents: events.map((e) => ({ step: e.step, at: e.createdAt })),
       dataRequests: requests,
+      legalAcceptances: acceptances,
     };
   }
 
@@ -178,6 +181,7 @@ export async function exportAccountData(userId: string) {
     pushDevices: devices.length,
     onboardingEvents: events.map((e) => ({ step: e.step, at: e.createdAt })),
     dataRequests: requests,
+    legalAcceptances: acceptances,
   };
 }
 

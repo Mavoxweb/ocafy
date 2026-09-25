@@ -9,6 +9,7 @@ import {
   type DaySchedule,
   type Entitlements,
   type HouseProfile,
+  LEGAL_VERSION,
   type LitterSettings,
   type MemberSlot,
   type NotifPrefs,
@@ -140,6 +141,14 @@ export interface NotificationsState {
   absences: { id: string; from: string; until: string; note: string | null }[];
 }
 
+export interface LegalState {
+  version: string;
+  /** Já aceitou os Termos e a Política na versão vigente? */
+  accepted: boolean;
+  /** O bloqueio para quem já usa o app está ligado (chave do painel)? */
+  gate: boolean;
+}
+
 export interface PlanState {
   id: PlanId;
   source: PlanSource;
@@ -176,6 +185,7 @@ export interface AppState {
   notifications: NotificationsState;
   /** Casa suspensa pelo administrador (só leitura). */
   suspended: { reason: string | null } | null;
+  legal: LegalState;
   plan: PlanState;
   rewards: Reward[];
   purchases: Purchase[];
@@ -211,6 +221,7 @@ export const EMPTY_STATE: AppState = {
   office: { start: null, done: {}, steps: {}, inventory: [] },
   shopping: { items: [], cadence: null, day: null, trips: [] },
   suspended: null,
+  legal: { version: LEGAL_VERSION, accepted: true, gate: false },
   plan: {
     id: "free",
     source: null,

@@ -2283,3 +2283,38 @@ input[type="range"] {
   display: grid;
   gap: 4px;
 }
+
+/* aceite legal e documentos */
+.legal-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--soft);
+  cursor: pointer;
+}
+.legal-check input {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  accent-color: var(--accent-strong);
+}
+.legal h2 {
+  font-size: 1.05rem;
+  margin: 22px 0 8px;
+}
+.legal p {
+  line-height: 1.55;
+  margin: 8px 0;
+}
+.legal ul {
+  list-style: disc;
+  padding-left: 1.3rem;
+  display: grid;
+  gap: 6px;
+  line-height: 1.5;
+}
