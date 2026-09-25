@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { runNotificationTick } from "@ocafy/api";
+import { runBillingTick, runNotificationTick } from "@ocafy/api";
 import { NextResponse } from "next/server";
 
 // Roda a cada poucos minutos (GitHub Actions → esta rota). Sem cache; pode levar alguns segundos.
@@ -26,7 +26,9 @@ async function handle(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const summary = await runNotificationTick();
-  return NextResponse.json({ ok: true, ...summary });
+  // A mesma rotina de 5 em 5 minutos encerra carências vencidas e envia avisos de cobrança.
+  const billing = await runBillingTick().catch(() => null);
+  return NextResponse.json({ ok: true, ...summary, billing });
 }
 
 export const GET = handle;

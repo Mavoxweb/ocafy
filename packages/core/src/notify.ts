@@ -18,7 +18,8 @@ export type NotifKind =
   | "shopping_day"
   | "trade"
   | "purchase"
-  | "shopping_urgent";
+  | "shopping_urgent"
+  | "billing";
 
 export interface NotifPrefs {
   enabled: boolean;

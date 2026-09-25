@@ -15,3 +15,9 @@ export {
   passwordResetEmail,
   welcomeEmail,
 } from "./email/templates";
+export {
+  processBillingEvent,
+  runBillingTick,
+  redactPayload,
+  type ProcessResult,
+} from "./billing";

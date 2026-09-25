@@ -73,3 +73,24 @@ export function passwordResetEmail(opts: { name: string; url: string }) {
     text: `Redefina sua senha do Ocafy: ${opts.url}`,
   };
 }
+
+export function paymentFailedEmail(opts: {
+  houseName: string;
+  daysLeft: number;
+  step: number;
+  url: string;
+}) {
+  const last = opts.step >= 3;
+  return {
+    subject: last
+      ? `Último aviso: o Plus da casa “${opts.houseName}” termina amanhã`
+      : `Não conseguimos cobrar sua assinatura do Ocafy`,
+    html: layout(
+      last ? "Seu Plus termina amanhã" : "Pagamento não realizado",
+      `<p style="line-height:1.5">Não conseguimos processar o pagamento da assinatura Plus da casa <b>${esc(opts.houseName)}</b>.</p>
+       <p style="line-height:1.5">O Plus continua ativo por mais <b>${opts.daysLeft} ${opts.daysLeft === 1 ? "dia" : "dias"}</b>. Depois disso a casa volta ao plano Grátis — <b>nada do que vocês registraram é apagado</b>, apenas deixa de ser possível adicionar além dos limites do plano.</p>`,
+      { label: "Atualizar pagamento", url: opts.url },
+    ),
+    text: `Não conseguimos cobrar a assinatura Plus da casa "${opts.houseName}". O Plus segue ativo por ${opts.daysLeft} dia(s). Atualize o pagamento: ${opts.url}`,
+  };
+}
