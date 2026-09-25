@@ -16,6 +16,9 @@ export function StoreBoot() {
       "/redefinir-senha",
     ].includes(location.pathname);
     const stopSync = startSync({ initial: !onAuthPage });
+    // Service worker (avisos push): registra em segundo plano, sem cache de páginas.
+    if (!onAuthPage && "serviceWorker" in navigator)
+      void navigator.serviceWorker.register("/sw.js").catch(() => {});
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const onScheme = () => {
       if (readTheme() === "auto") applyTheme("auto");

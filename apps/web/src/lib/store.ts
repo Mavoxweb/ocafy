@@ -3,10 +3,13 @@
 import {
   type AgeBand,
   type CompletionEntry,
+  DEFAULT_PREFS,
   DEFAULT_PROFILE,
+  type DaySchedule,
   type HouseProfile,
   type LitterSettings,
   type MemberSlot,
+  type NotifPrefs,
   type Pet,
   type RoomInstance,
   type ShopCadence,
@@ -122,6 +125,17 @@ export interface ShoppingState {
   trips: string[];
 }
 
+export interface NotificationsState {
+  prefs: NotifPrefs;
+  /** Aparelhos registrados para push. */
+  devices: number;
+  pushConfigured: boolean;
+  vapidPublicKey: string | null;
+  timezone: string;
+  schedule: DaySchedule[];
+  absences: { id: string; from: string; until: string; note: string | null }[];
+}
+
 export type LoadStatus = "loading" | "anon" | "nohousehold" | "ready" | "error";
 
 export interface AppState {
@@ -144,6 +158,7 @@ export interface AppState {
   meals: MealRecord[];
   office: OfficeState;
   shopping: ShoppingState;
+  notifications: NotificationsState;
   rewards: Reward[];
   purchases: Purchase[];
   reactions: Reaction[];
@@ -177,6 +192,15 @@ export const EMPTY_STATE: AppState = {
   meals: [],
   office: { start: null, done: {}, steps: {}, inventory: [] },
   shopping: { items: [], cadence: null, day: null, trips: [] },
+  notifications: {
+    prefs: DEFAULT_PREFS,
+    devices: 0,
+    pushConfigured: false,
+    vapidPublicKey: null,
+    timezone: "America/Sao_Paulo",
+    schedule: [],
+    absences: [],
+  },
   rewards: [],
   purchases: [],
   reactions: [],

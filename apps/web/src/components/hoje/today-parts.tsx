@@ -38,6 +38,7 @@ import {
 import { useAppState } from "@/lib/store";
 import { openSheet } from "@/lib/ui";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 /* ---------- herói: anel de progresso da rotina ---------- */
 export function TodayHero() {
@@ -113,6 +114,50 @@ export function InviteCard() {
   // Solo nunca convida; Casal até 2 adultos; Família até 4.
   if (s.profile.mode === "solo" || adultsOf(s).length >= limit) return null;
   return <InvitePanel />;
+}
+
+/* ---------- convite para ligar os lembretes (uma vez; dispensável) ---------- */
+export function ReminderNudge() {
+  const s = useAppState();
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    try {
+      setHidden(localStorage.getItem("ocafy-nudge-reminders") === "1");
+    } catch {
+      setHidden(false);
+    }
+  }, []);
+  const n = s.notifications;
+  if (hidden || !n.pushConfigured || n.prefs.enabled) return null;
+  return (
+    <div className="panel flex items-center gap-3">
+      <span aria-hidden="true" className="text-[1.6rem]">
+        🔔
+      </span>
+      <div className="min-w-0 flex-1">
+        <b className="text-[0.92rem]">Quer lembretes no celular?</b>
+        <div className="meta m-0">
+          Antes de sair de casa e na hora de retirar a proteína.
+        </div>
+      </div>
+      <Link href="/lembretes" className="btn btn-small">
+        Ativar
+      </Link>
+      <button
+        type="button"
+        className="x-btn"
+        aria-label="Agora não"
+        onClick={() => {
+          try {
+            localStorage.setItem("ocafy-nudge-reminders", "1");
+          } catch {}
+          setHidden(true);
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
 }
 
 /* ---------- tarefas atribuídas (crianças e as minhas) ---------- */

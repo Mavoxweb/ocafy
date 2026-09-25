@@ -3,6 +3,7 @@ import { db, households, shoppingItems, shoppingTrips } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { notifyHousehold } from "../notifications";
 import { shoppingItemSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
@@ -44,6 +45,17 @@ export const shoppingRouter = router({
           addedBy: ctx.member.id,
         })
         .onConflictDoNothing({ target: shoppingItems.id });
+      if (input.urgency === "now") {
+        await notifyHousehold({
+          householdId: ctx.householdId,
+          kind: "shopping_urgent",
+          exceptMemberId: ctx.member.id,
+          eventId: id,
+          title: `${ctx.member.displayName} marcou como urgente`,
+          body: input.name,
+          url: "/compras",
+        });
+      }
       return { id };
     }),
 

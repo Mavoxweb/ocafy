@@ -9,6 +9,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
+import { notifyHousehold } from "../notifications";
 import { loadPlan } from "../plan";
 import { reactionSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
@@ -68,7 +69,8 @@ export const socialRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      if (!resolveTask(await loadPlan(ctx.householdId), input.taskKey)) {
+      const plan = await loadPlan(ctx.householdId);
+      if (!resolveTask(plan, input.taskKey)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Tarefa desconhecida.",
@@ -130,6 +132,16 @@ export const socialRouter = router({
           assigneeId: other.id,
         })
         .onConflictDoNothing({ target: taskTrades.id });
+      await notifyHousehold({
+        householdId: ctx.householdId,
+        kind: "trade",
+        onlyMemberIds: [other.id],
+        eventId: id,
+        title: `${ctx.member.displayName} pediu sua ajuda`,
+        body:
+          plan.find((t) => t.id === input.taskKey)?.t ?? "Uma tarefa da casa",
+        url: "/",
+      });
       return { id };
     }),
 

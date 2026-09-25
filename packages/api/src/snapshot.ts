@@ -1,7 +1,9 @@
 import type {
   AgeBand,
+  DaySchedule,
   HouseProfile,
   LitterSettings,
+  NotifPrefs,
   Pet,
   RoomInstance,
   ShopCadence,
@@ -17,10 +19,14 @@ import {
   invites,
   litterSettings,
   meals,
+  memberAbsences,
+  memberSchedule,
+  notificationPrefs,
   officeGoals,
   officeProjects,
   officeSteps,
   pets,
+  pushSubscriptions,
   rewardPurchases,
   rooms,
   shoppingItems,
@@ -31,7 +37,9 @@ import {
   taskTrades,
 } from "@ocafy/db";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { prefsFromRow } from "./notifications";
 import { petOf, profileOf, roomsOf } from "./plan";
+import { pushConfigured, vapidPublicKey } from "./push";
 
 /**
  * Estado completo da casa, em JSON puro (datas em ISO). O formato espelha o
@@ -136,6 +144,23 @@ export interface Snapshot {
     /** Últimas idas ao mercado (ISO, mais recente primeiro). */
     trips: string[];
   };
+  /** Avisos e agenda da própria pessoa. */
+  notifications: {
+    prefs: NotifPrefs;
+    /** Aparelhos registrados para push. */
+    devices: number;
+    /** O servidor tem as chaves de push? */
+    pushConfigured: boolean;
+    vapidPublicKey: string | null;
+    timezone: string;
+    schedule: DaySchedule[];
+    absences: {
+      id: string;
+      from: string;
+      until: string;
+      note: string | null;
+    }[];
+  };
   /** Convite ativo (só aparece enquanto a casa tem menos de 2 membros). */
   invite: { code: string; expiresAt: string } | null;
 }
@@ -148,6 +173,7 @@ const iso = (d: Date) => d.toISOString();
  */
 export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
   const hid = sql`(select ${householdMembers.householdId} from ${householdMembers} where ${householdMembers.userId} = ${userId})`;
+  const me = sql`(select ${householdMembers.id} from ${householdMembers} where ${householdMembers.userId} = ${userId})`;
   const now = new Date();
 
   const [
@@ -171,6 +197,10 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     assignmentRows,
     shopItemRows,
     shopTripRows,
+    [myPrefs],
+    deviceRows,
+    scheduleRows,
+    absenceRows,
   ] = await db.batch([
     db
       .select({
@@ -227,6 +257,16 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       .where(eq(shoppingTrips.householdId, hid))
       .orderBy(desc(shoppingTrips.doneAt))
       .limit(12),
+    db
+      .select()
+      .from(notificationPrefs)
+      .where(eq(notificationPrefs.memberId, me)),
+    db
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.memberId, me)),
+    db.select().from(memberSchedule).where(eq(memberSchedule.memberId, me)),
+    db.select().from(memberAbsences).where(eq(memberAbsences.memberId, me)),
   ]);
 
   const member = memberRows.find((m) => m.userId === userId);
@@ -366,6 +406,27 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
       cadence: household.shopCadence,
       day: household.shopDay,
       trips: shopTripRows.map((t) => iso(t.doneAt)),
+    },
+    notifications: {
+      prefs: prefsFromRow(myPrefs),
+      devices: deviceRows.length,
+      pushConfigured: pushConfigured(),
+      vapidPublicKey: vapidPublicKey(),
+      timezone: household.timezone,
+      schedule: scheduleRows.map((r) => ({
+        weekday: r.weekday,
+        mode: r.mode,
+        leave: r.leaveTime,
+        back: r.backTime,
+      })),
+      absences: absenceRows
+        .map((a) => ({
+          id: a.id,
+          from: a.fromDate,
+          until: a.untilDate,
+          note: a.note,
+        }))
+        .sort((a, b) => (a.from < b.from ? -1 : 1)),
     },
     invite: invite
       ? { code: invite.code, expiresAt: iso(invite.expiresAt) }

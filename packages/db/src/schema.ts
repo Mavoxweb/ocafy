@@ -462,3 +462,113 @@ export const shoppingTrips = pgTable(
   },
   (t) => [index("shopping_trips_household_idx").on(t.householdId, t.doneAt)],
 );
+
+/** Agenda semanal de cada adulto: em casa, fora o dia todo, ou sai e volta (lembretes respeitam isso). */
+export const memberSchedule = pgTable(
+  "member_schedule",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    weekday: integer("weekday").notNull(), // 0 = domingo
+    mode: text("mode", { enum: ["home", "away", "partial"] })
+      .default("home")
+      .notNull(),
+    leaveTime: text("leave_time"), // HH:MM
+    backTime: text("back_time"),
+  },
+  (t) => [uniqueIndex("member_schedule_uq").on(t.memberId, t.weekday)],
+);
+
+/** Ausências de vários dias (viagem, plantão…). */
+export const memberAbsences = pgTable(
+  "member_absences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    fromDate: varchar("from_date", { length: 10 }).notNull(),
+    untilDate: varchar("until_date", { length: 10 }).notNull(),
+    note: text("note"),
+  },
+  (t) => [index("member_absences_member_idx").on(t.memberId)],
+);
+
+/** Preferências de aviso por pessoa. Nada é enviado sem `enabled` (opt-in). */
+export const notificationPrefs = pgTable("notification_prefs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  householdId: uuid("household_id")
+    .references(() => households.id, { onDelete: "cascade" })
+    .notNull(),
+  memberId: uuid("member_id")
+    .references(() => householdMembers.id, { onDelete: "cascade" })
+    .unique()
+    .notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  morning: boolean("morning").default(true).notNull(),
+  night: boolean("night").default(true).notNull(),
+  due: boolean("due").default(true).notNull(),
+  defrost: boolean("defrost").default(true).notNull(),
+  partner: boolean("partner").default(true).notNull(),
+  shopping: boolean("shopping").default(true).notNull(),
+  quietStart: text("quiet_start").default("22:00").notNull(),
+  quietEnd: text("quiet_end").default("07:00").notNull(),
+  remindBeforeMin: integer("remind_before_min").default(15).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** Dispositivos que aceitaram receber push (Web Push / VAPID). */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastSuccessAt: timestamp("last_success_at"),
+    failCount: integer("fail_count").default(0).notNull(),
+  },
+  (t) => [
+    uniqueIndex("push_subscriptions_endpoint_uq").on(t.endpoint),
+    index("push_subscriptions_member_idx").on(t.memberId),
+  ],
+);
+
+/** Registro de cada aviso (evita duplicar, ajuda o suporte e o painel admin). */
+export const notificationLog = pgTable(
+  "notification_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    householdId: uuid("household_id")
+      .references(() => households.id, { onDelete: "cascade" })
+      .notNull(),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    status: text("status", { enum: ["sent", "failed", "no_device"] }).notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("notification_log_dedupe_uq").on(t.memberId, t.dedupeKey),
+    index("notification_log_created_idx").on(t.createdAt),
+  ],
+);

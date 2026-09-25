@@ -3,6 +3,7 @@ import { completions, db, rewardPurchases, storeRewards } from "@ocafy/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { notifyHousehold } from "../notifications";
 import { rewardSchema, uuid } from "../schemas/index";
 import { memberProcedure, router } from "../trpc";
 
@@ -81,6 +82,15 @@ export const storeRouter = router({
           status: "pending",
         })
         .onConflictDoNothing({ target: rewardPurchases.id });
+      await notifyHousehold({
+        householdId: ctx.householdId,
+        kind: "purchase",
+        exceptMemberId: ctx.member.id,
+        eventId: id,
+        title: `${ctx.member.displayName} quer resgatar um prêmio`,
+        body: `${reward.icon} ${reward.title} — aprove na Lojinha`,
+        url: "/loja",
+      });
       return { id };
     }),
 

@@ -168,6 +168,15 @@ export function SettingsSheet() {
         Editar minha casa
       </Link>
 
+      <h4>Lembretes e agenda</h4>
+      <p className="meta">
+        Avisos no horário certo, respeitando os dias em que você está fora de
+        casa.
+      </p>
+      <Link href="/lembretes" className="btn" onClick={closeSheet}>
+        Configurar lembretes
+      </Link>
+
       <h4>Método</h4>
       <button
         type="button"

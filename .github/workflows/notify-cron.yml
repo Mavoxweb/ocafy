@@ -1,0 +1,27 @@
+name: Lembretes (cron)
+
+# Dispara o agendador de avisos do Ocafy a cada 5 minutos.
+# Configure em Settings → Secrets and variables → Actions:
+#   APP_URL      https://seu-app.vercel.app   (sem barra no final)
+#   CRON_SECRET  o mesmo valor da variável CRON_SECRET na Vercel
+# O GitHub pode atrasar execuções agendadas alguns minutos; os avisos têm uma janela de tolerância.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    if: ${{ vars.NOTIFY_CRON != 'off' }}
+    steps:
+      - name: Chamar o agendador
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL/CRON_SECRET não configurados; nada a fazer."
+            exit 0
+          fi
+          curl -fsS --max-time 60 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/notify"

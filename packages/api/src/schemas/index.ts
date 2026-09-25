@@ -121,6 +121,68 @@ export const shoppingItemSchema = z.object({
   urgency: z.enum(["now", "soon", "later"]).optional(),
 });
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horário HH:MM");
+
+export const notifPrefsPatch = z.object({
+  enabled: z.boolean().optional(),
+  morning: z.boolean().optional(),
+  night: z.boolean().optional(),
+  due: z.boolean().optional(),
+  defrost: z.boolean().optional(),
+  partner: z.boolean().optional(),
+  shopping: z.boolean().optional(),
+  quietStart: hhmm.optional(),
+  quietEnd: hhmm.optional(),
+  remindBeforeMin: z.number().int().min(0).max(180).optional(),
+});
+
+/**
+ * Só aceitamos endpoints dos serviços de push dos navegadores: o servidor faz uma chamada
+ * HTTP para esse endereço, então um endpoint arbitrário seria uma porta para SSRF.
+ */
+const PUSH_HOSTS = [
+  /^fcm\.googleapis\.com$/,
+  /^updates\.push\.services\.mozilla\.com$/,
+  /^[a-z0-9-]+\.push\.services\.mozilla\.com$/,
+  /^[a-z0-9.-]+\.notify\.windows\.com$/,
+  /^web\.push\.apple\.com$/,
+  /^[a-z0-9.-]+\.push\.apple\.com$/,
+];
+
+export const isAllowedPushEndpoint = (raw: string): boolean => {
+  try {
+    const u = new URL(raw);
+    return (
+      u.protocol === "https:" && PUSH_HOSTS.some((r) => r.test(u.hostname))
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z
+    .string()
+    .max(600)
+    .refine(isAllowedPushEndpoint, "Serviço de push não suportado."),
+  p256dh: z.string().min(20).max(200),
+  auth: z.string().min(8).max(100),
+  userAgent: z.string().max(200).optional(),
+});
+
+export const dayScheduleSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  mode: z.enum(["home", "away", "partial"]),
+  leave: hhmm.nullish(),
+  back: hhmm.nullish(),
+});
+
+export const absenceSchema = z.object({
+  from: dateKey,
+  until: dateKey,
+  note: z.string().trim().max(60).optional(),
+});
+
 export const joinSchema = z.object({
   code: z.string().trim().min(4).max(16),
   memberName: z.string().trim().min(2, "Seu nome é obrigatório").max(24),

@@ -2,6 +2,8 @@
 
 import {
   type CompletionEntry,
+  type DaySchedule,
+  type NotifPrefs,
   type ShopCadence,
   type ShopUrgency,
   guessCategory,
@@ -15,6 +17,12 @@ import {
 import { dayKey, fmtTime, mondayKey, relDay, uid } from "./dates";
 import { banner, confetti, floatXP, vibrate } from "./fx";
 import { type HouseDraft, draftToInput, familyKids } from "./house-draft";
+import {
+  currentSubscription,
+  pushSupport,
+  registerWorker,
+  urlBase64ToUint8Array,
+} from "./push";
 import {
   achievements,
   assigneeOf,
@@ -39,7 +47,7 @@ import {
 } from "./selectors";
 import { type AppState, type ShoppingItem, store } from "./store";
 import { mutate, mutateStrict, refresh } from "./sync";
-import { trpc } from "./trpc";
+import { errorMessage, trpc } from "./trpc";
 import { closeSheet, toast } from "./ui";
 
 /**
@@ -780,6 +788,120 @@ export function setShopHabit(cadence: ShopCadence | null, day: number | null) {
     shopping: { ...s.shopping, cadence, day: cadence ? day : null },
   }));
   void mutate(() => trpc.shopping.setHabit.mutate({ cadence, day }));
+}
+
+/* ================= avisos e agenda ================= */
+
+const patchNotif = (next: Partial<AppState["notifications"]>) =>
+  store.set((s) => ({ ...s, notifications: { ...s.notifications, ...next } }));
+
+export function setNotifPrefs(patch: Partial<NotifPrefs>) {
+  patchNotif({ prefs: { ...get().notifications.prefs, ...patch } });
+  void mutate(() => trpc.notifications.setPrefs.mutate(patch));
+}
+
+export type EnablePushResult =
+  | "ok"
+  | "denied"
+  | "unsupported"
+  | "ios_install"
+  | "not_configured"
+  | "error";
+
+/** Pede permissão, assina o push deste aparelho e liga os avisos. */
+export async function enablePush(): Promise<EnablePushResult> {
+  const support = pushSupport();
+  if (support === "unsupported" || support === "ios_install") return support;
+  if (support === "denied") return "denied";
+  const key = get().notifications.vapidPublicKey;
+  if (!key) return "not_configured";
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return "denied";
+    const reg = await registerWorker();
+    if (!reg) return "unsupported";
+    const sub =
+      (await reg.pushManager.getSubscription()) ??
+      (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      }));
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth)
+      return "error";
+    await mutateStrict(async () => {
+      await trpc.notifications.subscribe.mutate({
+        endpoint: json.endpoint as string,
+        p256dh: json.keys?.p256dh as string,
+        auth: json.keys?.auth as string,
+        userAgent: navigator.userAgent.slice(0, 200),
+      });
+      await trpc.notifications.setPrefs.mutate({ enabled: true });
+    });
+    await refresh({ force: true });
+    return "ok";
+  } catch {
+    return "error";
+  }
+}
+
+/** Desliga os avisos e tira este aparelho da lista. */
+export async function disablePush() {
+  const sub = await currentSubscription();
+  patchNotif({ prefs: { ...get().notifications.prefs, enabled: false } });
+  await mutateStrict(async () => {
+    if (sub) {
+      await trpc.notifications.unsubscribe.mutate({ endpoint: sub.endpoint });
+      await sub.unsubscribe().catch(() => {});
+    }
+    await trpc.notifications.setPrefs.mutate({ enabled: false });
+  });
+  await refresh({ force: true });
+}
+
+export async function sendTestPush(): Promise<string> {
+  try {
+    const r = await mutateStrict(() => trpc.notifications.sendTest.mutate());
+    return r.sent > 0
+      ? "Aviso enviado. Confira o aparelho."
+      : "Não foi possível entregar. Tente ativar de novo.";
+  } catch (e) {
+    return errorMessage(e, "Não foi possível enviar o teste.");
+  }
+}
+
+export function setDaySchedule(day: DaySchedule) {
+  const cur = get().notifications.schedule.filter(
+    (d) => d.weekday !== day.weekday,
+  );
+  patchNotif({ schedule: [...cur, day] });
+  void mutate(() =>
+    trpc.agenda.setDay.mutate({
+      weekday: day.weekday,
+      mode: day.mode,
+      leave: day.leave,
+      back: day.back,
+    }),
+  );
+}
+
+/** Lança em caso de erro (a tela mostra a mensagem). */
+export async function addAbsence(from: string, until: string, note: string) {
+  await mutateStrict(() =>
+    trpc.agenda.addAbsence.mutate({
+      from,
+      until,
+      ...(note.trim() ? { note: note.trim() } : {}),
+    }),
+  );
+  await refresh({ force: true });
+}
+
+export function removeAbsence(id: string) {
+  patchNotif({
+    absences: get().notifications.absences.filter((a) => a.id !== id),
+  });
+  void mutate(() => trpc.agenda.removeAbsence.mutate({ id }));
 }
 
 /* ================= loja ================= */
