@@ -2,6 +2,7 @@ import "server-only";
 import { admin } from "@ocafy/api";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ADMIN_BASE } from "./base";
 
 /**
  * Sessão do painel: cookie assinado emitido só depois de login + segundo fator. A função e o
@@ -58,7 +59,7 @@ export async function requireStaff(
   permission: admin.Permission = "read",
 ): Promise<CurrentStaff> {
   const me = await currentStaff();
-  if (!me) redirect("/login");
-  if (!admin.can(me.role, permission)) redirect("/?negado=1");
+  if (!me) redirect(`${ADMIN_BASE}/login`);
+  if (!admin.can(me.role, permission)) redirect(`${ADMIN_BASE}?negado=1`);
   return me;
 }

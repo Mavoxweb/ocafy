@@ -1,4 +1,5 @@
 import { type SearchParams, Shell, fmtDate } from "@/components/shell";
+import { ADMIN_BASE } from "@/lib/base";
 import { requireStaff } from "@/lib/staff";
 import { admin } from "@ocafy/api";
 import Link from "next/link";
@@ -44,7 +45,7 @@ export default async function Casas({
           {rows.map((h) => (
             <tr key={h.id}>
               <td>
-                <Link href={`/casas/${h.id}`}>{h.name}</Link>{" "}
+                <Link href={`${ADMIN_BASE}/casas/${h.id}`}>{h.name}</Link>{" "}
                 {h.suspended && <span className="pill bad">suspensa</span>}
               </td>
               <td>{h.owner ?? "—"}</td>

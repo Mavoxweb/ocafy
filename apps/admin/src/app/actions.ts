@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth-server";
+import { ADMIN_BASE } from "@/lib/base";
 import {
   clearSessionCookie,
   clientIp,
@@ -52,7 +53,7 @@ async function act(
 export async function submitTotp(_prev: unknown, form: FormData) {
   const { data } = await auth.getSession();
   const userId = data?.user?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirect(`${ADMIN_BASE}/login`);
   const r = await admin.verifyStaffTotp(
     userId,
     s(form, "code"),
@@ -77,36 +78,47 @@ export async function submitTotp(_prev: unknown, form: FormData) {
       role: r.staff.role,
     }),
   );
-  redirect("/");
+  redirect(ADMIN_BASE);
 }
 
 export async function logout() {
   await clearSessionCookie();
-  redirect("/login");
+  redirect(`${ADMIN_BASE}/login`);
 }
 
 /* ---------------- casas ---------------- */
 
 export async function suspend(form: FormData) {
   const id = s(form, "householdId");
-  await act(`/casas/${id}`, "household.suspend", "Casa suspensa.", (me) =>
-    admin.suspendHousehold(me, { householdId: id, reason: s(form, "reason") }),
+  await act(
+    `${ADMIN_BASE}/casas/${id}`,
+    "household.suspend",
+    "Casa suspensa.",
+    (me) =>
+      admin.suspendHousehold(me, {
+        householdId: id,
+        reason: s(form, "reason"),
+      }),
   );
 }
 
 export async function unsuspend(form: FormData) {
   const id = s(form, "householdId");
-  await act(`/casas/${id}`, "household.suspend", "Casa reativada.", (me) =>
-    admin.unsuspendHousehold(me, {
-      householdId: id,
-      reason: s(form, "reason"),
-    }),
+  await act(
+    `${ADMIN_BASE}/casas/${id}`,
+    "household.suspend",
+    "Casa reativada.",
+    (me) =>
+      admin.unsuspendHousehold(me, {
+        householdId: id,
+        reason: s(form, "reason"),
+      }),
   );
 }
 
 export async function addNote(form: FormData) {
   const id = s(form, "householdId");
-  await act(`/casas/${id}`, "notes", "Nota salva.", (me) =>
+  await act(`${ADMIN_BASE}/casas/${id}`, "notes", "Nota salva.", (me) =>
     admin.addSupportNote(me, { householdId: id, note: s(form, "note") }),
   );
 }
@@ -123,25 +135,33 @@ export async function grant(form: FormData) {
           ...(form.get("family") ? { family: true } : {}),
         }
       : null;
-  await act(`/casas/${id}`, "plan.write", "Liberação criada.", (me) =>
-    admin.grantPlan(me, {
-      householdId: id,
-      plan,
-      source: s(form, "source") === "promo" ? "promo" : "manual",
-      days: days > 0 ? days : null,
-      overrides,
-      reason: s(form, "reason"),
-    }),
+  await act(
+    `${ADMIN_BASE}/casas/${id}`,
+    "plan.write",
+    "Liberação criada.",
+    (me) =>
+      admin.grantPlan(me, {
+        householdId: id,
+        plan,
+        source: s(form, "source") === "promo" ? "promo" : "manual",
+        days: days > 0 ? days : null,
+        overrides,
+        reason: s(form, "reason"),
+      }),
   );
 }
 
 export async function revoke(form: FormData) {
   const id = s(form, "householdId");
-  await act(`/casas/${id}`, "plan.write", "Liberação revogada.", (me) =>
-    admin.revokeGrant(me, {
-      grantId: s(form, "grantId"),
-      reason: s(form, "reason"),
-    }),
+  await act(
+    `${ADMIN_BASE}/casas/${id}`,
+    "plan.write",
+    "Liberação revogada.",
+    (me) =>
+      admin.revokeGrant(me, {
+        grantId: s(form, "grantId"),
+        reason: s(form, "reason"),
+      }),
   );
 }
 
@@ -149,7 +169,7 @@ export async function manualSubscription(form: FormData) {
   const id = s(form, "householdId");
   const interval = s(form, "interval");
   await act(
-    `/casas/${id}`,
+    `${ADMIN_BASE}/casas/${id}`,
     "subscription.write",
     "Assinatura manual registrada.",
     (me) =>
@@ -168,7 +188,7 @@ export async function manualSubscription(form: FormData) {
 export async function expire(form: FormData) {
   const id = s(form, "householdId");
   await act(
-    `/casas/${id}`,
+    `${ADMIN_BASE}/casas/${id}`,
     "subscription.write",
     "Assinatura encerrada.",
     (me) =>
@@ -183,7 +203,7 @@ export async function ban(form: FormData) {
   const id = s(form, "householdId");
   const unban = s(form, "unban") === "1";
   await act(
-    `/casas/${id}`,
+    `${ADMIN_BASE}/casas/${id}`,
     "user.ban",
     unban ? "Conta reativada." : "Conta banida e sessões encerradas.",
     (me) =>
@@ -198,7 +218,7 @@ export async function ban(form: FormData) {
 /* ---------------- chaves ---------------- */
 
 export async function toggleFlag(form: FormData) {
-  await act("/flags", "flags.write", "Chave atualizada.", (me) =>
+  await act(`${ADMIN_BASE}/flags`, "flags.write", "Chave atualizada.", (me) =>
     admin.setFlag(me, {
       key: s(form, "key"),
       enabled: s(form, "enabled") === "1",
@@ -211,7 +231,7 @@ export async function toggleFlag(form: FormData) {
 
 export async function requestStatus(form: FormData) {
   const status = s(form, "status") === "rejected" ? "rejected" : "in_progress";
-  await act("/lgpd", "lgpd.handle", "Pedido atualizado.", (me) =>
+  await act(`${ADMIN_BASE}/lgpd`, "lgpd.handle", "Pedido atualizado.", (me) =>
     admin.updateDataRequest(me, {
       requestId: s(form, "requestId"),
       status,
@@ -221,7 +241,7 @@ export async function requestStatus(form: FormData) {
 }
 
 export async function executeDeletion(form: FormData) {
-  await act("/lgpd", "lgpd.delete", "Exclusão executada.", (me) =>
+  await act(`${ADMIN_BASE}/lgpd`, "lgpd.delete", "Exclusão executada.", (me) =>
     admin.executeDeletionRequest(me, {
       requestId: s(form, "requestId"),
       reason: s(form, "reason"),
@@ -239,7 +259,7 @@ export async function addStaff(_prev: unknown, form: FormData) {
       role: s(form, "role"),
       reason: s(form, "reason"),
     });
-    revalidatePath("/equipe");
+    revalidatePath(`${ADMIN_BASE}/equipe`);
     return { secret: r.secret, uri: r.uri, error: null };
   } catch (e) {
     return { secret: null, uri: null, error: message(e) };
@@ -247,21 +267,107 @@ export async function addStaff(_prev: unknown, form: FormData) {
 }
 
 export async function staffActive(form: FormData) {
-  await act("/equipe", "staff.manage", "Equipe atualizada.", (me) =>
-    admin.setStaffActive(me, {
-      staffId: s(form, "staffId"),
-      active: s(form, "active") === "1",
-      reason: s(form, "reason"),
-    }),
+  await act(
+    `${ADMIN_BASE}/equipe`,
+    "staff.manage",
+    "Equipe atualizada.",
+    (me) =>
+      admin.setStaffActive(me, {
+        staffId: s(form, "staffId"),
+        active: s(form, "active") === "1",
+        reason: s(form, "reason"),
+      }),
   );
 }
 
 export async function staffRole(form: FormData) {
-  await act("/equipe", "staff.manage", "Papel atualizado.", (me) =>
+  await act(`${ADMIN_BASE}/equipe`, "staff.manage", "Papel atualizado.", (me) =>
     admin.changeStaffRole(me, {
       staffId: s(form, "staffId"),
       role: s(form, "role"),
       reason: s(form, "reason"),
     }),
+  );
+}
+
+/* ---------------- marketing interno ---------------- */
+
+/** `datetime-local` não carrega fuso: o painel opera no horário de Brasília (UTC-3, sem horário de verão). */
+const brDate = (v: string): Date => new Date(`${v}:00-03:00`);
+
+function campaignFromForm(form: FormData) {
+  const endsAt = s(form, "endsAt");
+  return {
+    title: s(form, "title"),
+    body: s(form, "body"),
+    ctaLabel: s(form, "ctaLabel") || null,
+    ctaUrl: s(form, "ctaUrl") || null,
+    kind:
+      s(form, "kind") === "modal" ? ("modal" as const) : ("banner" as const),
+    audience:
+      s(form, "audience") === "free"
+        ? ("free" as const)
+        : s(form, "audience") === "plus"
+          ? ("plus" as const)
+          : ("all" as const),
+    priority: Number(s(form, "priority")) || 0,
+    startsAt: brDate(s(form, "startsAt")),
+    endsAt: endsAt ? brDate(endsAt) : null,
+    dismissible: form.get("dismissible") === "1",
+  };
+}
+
+export async function createCampaign(form: FormData) {
+  await act(
+    `${ADMIN_BASE}/marketing`,
+    "marketing.write",
+    "Campanha criada.",
+    (me) =>
+      admin.createCampaign(me, {
+        ...campaignFromForm(form),
+        reason: s(form, "reason"),
+      }),
+  );
+}
+
+export async function updateCampaign(form: FormData) {
+  const id = s(form, "id");
+  await act(
+    `${ADMIN_BASE}/marketing/${id}`,
+    "marketing.write",
+    "Campanha atualizada.",
+    (me) =>
+      admin.updateCampaign(me, {
+        id,
+        ...campaignFromForm(form),
+        reason: s(form, "reason"),
+      }),
+  );
+}
+
+export async function campaignActive(form: FormData) {
+  await act(
+    `${ADMIN_BASE}/marketing`,
+    "marketing.write",
+    "Campanha atualizada.",
+    (me) =>
+      admin.setCampaignActive(me, {
+        id: s(form, "id"),
+        active: s(form, "active") === "1",
+        reason: s(form, "reason"),
+      }),
+  );
+}
+
+export async function deleteCampaign(form: FormData) {
+  await act(
+    `${ADMIN_BASE}/marketing`,
+    "marketing.write",
+    "Campanha excluída.",
+    (me) =>
+      admin.deleteCampaign(me, {
+        id: s(form, "id"),
+        reason: s(form, "reason"),
+      }),
   );
 }

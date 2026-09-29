@@ -6,6 +6,7 @@ import {
   Shell,
   fmtDate,
 } from "@/components/shell";
+import { ADMIN_BASE } from "@/lib/base";
 import { requireStaff } from "@/lib/staff";
 import { REQUEST_SLA_DAYS, admin } from "@ocafy/api";
 
@@ -78,7 +79,7 @@ export default async function Lgpd({
                     <div style={{ display: "grid", gap: 8 }}>
                       {req.kind === "export" && can("lgpd.handle") && (
                         <form
-                          action="/lgpd/export"
+                          action={`${ADMIN_BASE}/lgpd/export`}
                           method="post"
                           className="inline"
                         >

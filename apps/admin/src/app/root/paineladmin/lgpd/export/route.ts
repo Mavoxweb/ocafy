@@ -1,3 +1,4 @@
+import { ADMIN_BASE } from "@/lib/base";
 import { currentStaff } from "@/lib/staff";
 import { admin } from "@ocafy/api";
 import { NextResponse } from "next/server";
@@ -10,7 +11,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const me = await currentStaff();
-  if (!me) return NextResponse.redirect(new URL("/login", req.url), 303);
+  if (!me)
+    return NextResponse.redirect(new URL(`${ADMIN_BASE}/login`, req.url), 303);
   const form = await req.formData();
   try {
     const data = await admin.completeExportRequest(me, {
@@ -30,7 +32,7 @@ export async function POST(req: Request) {
         ? e.message
         : "Não foi possível gerar a cópia.";
     return NextResponse.redirect(
-      new URL(`/lgpd?err=${encodeURIComponent(msg)}`, req.url),
+      new URL(`${ADMIN_BASE}/lgpd?err=${encodeURIComponent(msg)}`, req.url),
       303,
     );
   }

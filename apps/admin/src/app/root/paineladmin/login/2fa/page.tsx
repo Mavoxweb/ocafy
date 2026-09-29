@@ -1,7 +1,7 @@
 "use client";
 
+import { submitTotp } from "@/app/actions";
 import { useActionState } from "react";
-import { submitTotp } from "../../actions";
 
 /** Passo 2: código de 6 dígitos do aplicativo autenticador. */
 export default function TwoFactorPage() {

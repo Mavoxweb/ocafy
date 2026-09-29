@@ -1,6 +1,7 @@
 "use client";
 
 import { authClient } from "@/lib/auth-client";
+import { ADMIN_BASE } from "@/lib/base";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
@@ -24,7 +25,7 @@ export default function LoginPage() {
         setError("E-mail ou senha incorretos.");
         return;
       }
-      router.replace("/login/2fa");
+      router.replace(`${ADMIN_BASE}/login/2fa`);
     } catch {
       setError("Não foi possível entrar. Tente de novo.");
     } finally {

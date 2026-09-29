@@ -1,7 +1,7 @@
 "use client";
 
+import { addStaff } from "@/app/actions";
 import { useActionState } from "react";
-import { addStaff } from "../actions";
 
 export function AddStaff({
   roles,

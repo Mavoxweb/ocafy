@@ -1,18 +1,20 @@
 import { logout } from "@/app/actions";
+import { ADMIN_BASE } from "@/lib/base";
 import type { CurrentStaff } from "@/lib/staff";
 import { admin } from "@ocafy/api";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 const NAV: { href: string; label: string; perm?: admin.Permission }[] = [
-  { href: "/", label: "Visão geral" },
-  { href: "/casas", label: "Casas" },
-  { href: "/assinaturas", label: "Assinaturas" },
-  { href: "/lgpd", label: "LGPD" },
-  { href: "/flags", label: "Chaves" },
-  { href: "/saude", label: "Saúde" },
-  { href: "/auditoria", label: "Auditoria" },
-  { href: "/equipe", label: "Equipe", perm: "staff.manage" },
+  { href: ADMIN_BASE, label: "Visão geral" },
+  { href: `${ADMIN_BASE}/casas`, label: "Casas" },
+  { href: `${ADMIN_BASE}/assinaturas`, label: "Assinaturas" },
+  { href: `${ADMIN_BASE}/lgpd`, label: "LGPD" },
+  { href: `${ADMIN_BASE}/marketing`, label: "Marketing" },
+  { href: `${ADMIN_BASE}/flags`, label: "Chaves" },
+  { href: `${ADMIN_BASE}/saude`, label: "Saúde" },
+  { href: `${ADMIN_BASE}/auditoria`, label: "Auditoria" },
+  { href: `${ADMIN_BASE}/equipe`, label: "Equipe", perm: "staff.manage" },
 ];
 
 export function Shell({
