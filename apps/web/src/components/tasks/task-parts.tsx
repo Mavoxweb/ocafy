@@ -1,6 +1,11 @@
 "use client";
 
-import { IconCheck } from "@/components/ui/icons";
+import {
+  IconCheck,
+  IconChevron,
+  IconClock,
+  IconHelp,
+} from "@/components/ui/icons";
 import { Bar, Group, StatusPill } from "@/components/ui/primitives";
 import { completeTask, undoToday } from "@/lib/actions";
 import { daysAgoPhrase, fmtTime } from "@/lib/dates";
@@ -15,10 +20,30 @@ import {
   statusLabel,
   taskStatus,
   taskTitle,
+  tradeBadge,
 } from "@/lib/selectors";
 import { useAppState } from "@/lib/store";
 import { openSheet } from "@/lib/ui";
 import { useState } from "react";
+
+/** Selo compacto: mostra na lista que a tarefa tem um pedido de ajuda em aberto. */
+function TradeBadge({ taskId }: { taskId: string }) {
+  const s = useAppState();
+  const badge = tradeBadge(s, taskId);
+  if (!badge) return null;
+  return (
+    <span className={`trade-badge tb-${badge.kind}`}>
+      {badge.kind === "incoming" ? (
+        <IconHelp size={13} />
+      ) : (
+        <IconClock size={13} />
+      )}
+      {badge.kind === "requested" && `Aguardando ${badge.name}`}
+      {badge.kind === "accepted" && `${badge.name} topou ajudar`}
+      {badge.kind === "incoming" && `${badge.name} pediu ajuda`}
+    </span>
+  );
+}
 
 /* ---------- checklist da rotina diária ---------- */
 export function RoutineBlock({
@@ -90,20 +115,22 @@ function ChecklistItem({ task }: { task: Task }) {
       >
         {done && <IconCheck />}
       </button>
-      <div>
+      <div className="min-w-0 flex-1">
         <button
           type="button"
-          className="tt text-left"
+          className="tt more text-left"
           style={{ background: "none", border: 0, padding: 0 }}
           onClick={() => openSheet({ kind: "task", id: task.id })}
         >
-          {title}
+          <span>{title}</span>
+          <IconChevron size={15} className="chev" />
         </button>
         {done && last && (
           <div className="meta">
             {memberName(s, last.who)} às {fmtTime(new Date(last.at))}
           </div>
         )}
+        <TradeBadge taskId={task.id} />
       </div>
     </div>
   );
@@ -123,11 +150,13 @@ export function TaskTile({ task }: { task: Task }) {
         className="tbody"
         onClick={() => openSheet({ kind: "task", id: task.id })}
       >
+        <IconChevron size={16} className="chev chev-corner" />
         <StatusPill state={st.state}>{statusLabel(st)}</StatusPill>
         <span className="ttl">{title}</span>
         <span className="meta">
           {task.roomLabel} · {task.mins} min
         </span>
+        <TradeBadge taskId={task.id} />
       </button>
       <div className="tfoot">
         <span className="pts">+{5 + task.mins} XP</span>
@@ -180,6 +209,8 @@ export function TaskRow({ task }: { task: Task }) {
           <span className={`lbl lbl-${st.state}`}>{lbl}</span>
           {when ? ` · ${when}` : ""} · {freq} · {task.mins} min
         </span>
+        <TradeBadge taskId={task.id} />
+        <IconChevron size={17} className="chev chev-tmain" />
       </button>
       <button
         type="button"

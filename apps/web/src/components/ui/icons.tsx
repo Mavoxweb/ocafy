@@ -64,6 +64,32 @@ export const IconFlame = ({ size = 26 }: { size?: number }) => (
   </Svg>
 );
 
+/** Seta que indica "toque para ver mais". */
+export const IconChevron = ({
+  size = 18,
+  className,
+}: { size?: number; className?: string }) => (
+  <Svg size={size} strokeWidth={2.3} className={className}>
+    <path d="M9 6l6 6-6 6" />
+  </Svg>
+);
+
+/** Pedir ajuda (não é uma ordem — por isso um ícone de mão, não de atribuição). */
+export const IconHelp = ({ size = 18 }: { size?: number }) => (
+  <Svg size={size} strokeWidth={2}>
+    <path d="M8.5 9a3.5 3.5 0 1 1 4.6 3.3c-.8.3-1.1.9-1.1 1.7" />
+    <path d="M12 17.5h.01" />
+  </Svg>
+);
+
+/** Pedido ainda sem resposta. */
+export const IconClock = ({ size = 16 }: { size?: number }) => (
+  <Svg size={size} strokeWidth={2}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 8.5v4l2.6 1.6" />
+  </Svg>
+);
+
 export const IconStar = ({ size = 30 }: { size?: number }) => (
   <Svg size={size}>
     <path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z" />

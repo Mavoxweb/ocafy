@@ -793,3 +793,61 @@ export const legalAcceptances = pgTable(
     index("legal_acceptances_user_idx").on(t.userId, t.document, t.version),
   ],
 );
+
+/**
+ * Marketing interno: avisos e promoções que a equipe programa pelo painel admin (sem deploy).
+ * `banner` aparece como um cartão dispensável no topo de Hoje; `modal` interrompe com um popup
+ * central. Uma casa nunca vê mais de uma por vez: a de maior prioridade entre as elegíveis.
+ */
+export const marketingCampaigns = pgTable(
+  "marketing_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    ctaLabel: text("cta_label"),
+    /** Caminho interno (ex.: "/plano") ou URL externa (https://…). */
+    ctaUrl: text("cta_url"),
+    kind: text("kind", { enum: ["modal", "banner"] })
+      .default("banner")
+      .notNull(),
+    audience: text("audience", { enum: ["all", "free", "plus"] })
+      .default("all")
+      .notNull(),
+    active: boolean("active").default(false).notNull(),
+    /** Maior número vence quando mais de uma campanha é elegível ao mesmo tempo. */
+    priority: integer("priority").default(0).notNull(),
+    startsAt: timestamp("starts_at").defaultNow().notNull(),
+    /** Nulo = sem data de fim. */
+    endsAt: timestamp("ends_at"),
+    dismissible: boolean("dismissible").default(true).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("marketing_campaigns_active_idx").on(t.active, t.priority)],
+);
+
+/** Um evento por pessoa e campanha (exibido/clicado/dispensado): decide se mostra de novo. */
+export const marketingCampaignEvents = pgTable(
+  "marketing_campaign_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    campaignId: uuid("campaign_id")
+      .references(() => marketingCampaigns.id, { onDelete: "cascade" })
+      .notNull(),
+    householdId: uuid("household_id").references(() => households.id, {
+      onDelete: "cascade",
+    }),
+    memberId: uuid("member_id")
+      .references(() => householdMembers.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind", { enum: ["shown", "clicked", "dismissed"] }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("marketing_events_campaign_idx").on(t.campaignId, t.kind),
+    /** Uma pessoa só conta uma vez por tipo de evento (exibido/clicado/dispensado) — repetir não duplica. */
+    uniqueIndex("marketing_events_unique").on(t.campaignId, t.memberId, t.kind),
+  ],
+);

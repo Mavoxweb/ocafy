@@ -111,6 +111,63 @@ export const suitableFor = (t: Task, m: Member): boolean =>
 /** Máximo de adultos com conta que o modo permite. */
 export const ADULT_LIMIT = { solo: 1, couple: 2, family: 4 } as const;
 
+/* ================= pedidos de ajuda ================= */
+
+/** Meu pedido de ajuda em aberto (ou já aceito) para esta tarefa, por pessoa. */
+export function myTradesFor(
+  s: AppState,
+  taskId: string,
+): { pending: Set<string>; accepted: Set<string> } {
+  const me = currentMember(s);
+  const pending = new Set<string>();
+  const accepted = new Set<string>();
+  if (!me) return { pending, accepted };
+  for (const t of s.trades) {
+    if (t.taskId !== taskId || t.requesterId !== me.id) continue;
+    if (t.status === "pending") pending.add(t.assigneeId);
+    else if (t.status === "accepted") accepted.add(t.assigneeId);
+  }
+  return { pending, accepted };
+}
+
+/** Pedido que outra pessoa me fez para esta tarefa, ainda sem resposta. */
+export function incomingTradeFor(s: AppState, taskId: string) {
+  const me = currentMember(s);
+  if (!me) return undefined;
+  return s.trades.find(
+    (t) =>
+      t.taskId === taskId && t.assigneeId === me.id && t.status === "pending",
+  );
+}
+
+export type TradeBadge =
+  | { kind: "requested"; name: string }
+  | { kind: "accepted"; name: string }
+  | { kind: "incoming"; name: string };
+
+/** Resumo do pedido de ajuda desta tarefa, do ponto de vista de quem está olhando o card. */
+export function tradeBadge(s: AppState, taskId: string): TradeBadge | null {
+  const me = currentMember(s);
+  if (!me) return null;
+  const mine = s.trades.find(
+    (t) =>
+      t.taskId === taskId &&
+      t.requesterId === me.id &&
+      (t.status === "pending" || t.status === "accepted"),
+  );
+  if (mine) {
+    return {
+      kind: mine.status === "pending" ? "requested" : "accepted",
+      name: memberName(s, mine.assigneeId),
+    };
+  }
+  const incoming = incomingTradeFor(s, taskId);
+  if (incoming) {
+    return { kind: "incoming", name: memberName(s, incoming.requesterId) };
+  }
+  return null;
+}
+
 export const memberBySlot = (s: AppState, slot: Slot) =>
   s.members.find((m) => m.slot === slot);
 

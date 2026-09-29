@@ -13,6 +13,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { flag, invalidateFlags } from "../flags";
 import { deleteAccountData, exportAccountData } from "../lgpd";
+import * as marketing from "../marketing";
 import { type Actor, AdminError, guarded } from "./audit";
 import { isStaffRole } from "./permissions";
 import { createStaff } from "./staff";
@@ -631,6 +632,154 @@ export async function changeStaffRole(
         before: { role: s.role },
         after: { role: input.role },
       };
+    },
+  );
+}
+
+/* ---------------- marketing interno ---------------- */
+
+const campaignInputShape = (input: Partial<marketing.CampaignInput>) => ({
+  ...(input.title !== undefined
+    ? { title: input.title.trim().slice(0, 60) }
+    : {}),
+  ...(input.body !== undefined
+    ? { body: input.body.trim().slice(0, 280) }
+    : {}),
+  ...(input.ctaLabel !== undefined
+    ? { ctaLabel: input.ctaLabel?.trim().slice(0, 30) || null }
+    : {}),
+  ...(input.ctaUrl !== undefined
+    ? { ctaUrl: input.ctaUrl?.trim() || null }
+    : {}),
+  ...(input.kind !== undefined ? { kind: input.kind } : {}),
+  ...(input.audience !== undefined ? { audience: input.audience } : {}),
+  ...(input.priority !== undefined ? { priority: input.priority } : {}),
+  ...(input.startsAt !== undefined ? { startsAt: input.startsAt } : {}),
+  ...(input.endsAt !== undefined ? { endsAt: input.endsAt } : {}),
+  ...(input.dismissible !== undefined
+    ? { dismissible: input.dismissible }
+    : {}),
+});
+
+const assertCampaignShape = (input: Partial<marketing.CampaignInput>) => {
+  if (input.title !== undefined && !input.title.trim())
+    throw new AdminError("invalid", "Dê um título para a campanha.");
+  if (input.body !== undefined && !input.body.trim())
+    throw new AdminError("invalid", "Escreva o texto da campanha.");
+  if (
+    input.ctaUrl &&
+    !input.ctaUrl.trim().startsWith("/") &&
+    !/^https?:\/\//i.test(input.ctaUrl.trim())
+  ) {
+    throw new AdminError(
+      "invalid",
+      "O link deve começar com / (interno) ou http(s):// (externo).",
+    );
+  }
+  if (
+    input.startsAt &&
+    input.endsAt &&
+    input.startsAt.getTime() >= input.endsAt.getTime()
+  ) {
+    throw new AdminError("invalid", "A data de fim deve vir depois do início.");
+  }
+};
+
+export async function createCampaign(
+  actor: Actor,
+  input: marketing.CampaignInput & { reason: string },
+) {
+  return guarded(
+    actor,
+    "marketing.write",
+    { action: "campaign.create", targetType: "campaign", reason: input.reason },
+    async () => {
+      assertCampaignShape(input);
+      const row = await marketing.createCampaign(
+        campaignInputShape(input) as marketing.CampaignInput,
+        actor.email,
+      );
+      return {
+        result: { id: row.id },
+        targetId: row.id,
+        after: campaignInputShape(input),
+      };
+    },
+  );
+}
+
+export async function updateCampaign(
+  actor: Actor,
+  input: { id: string; reason: string } & Partial<marketing.CampaignInput>,
+) {
+  return guarded(
+    actor,
+    "marketing.write",
+    {
+      action: "campaign.update",
+      targetType: "campaign",
+      targetId: input.id,
+      reason: input.reason,
+    },
+    async () => {
+      const { id, reason, ...patch } = input;
+      assertCampaignShape(patch);
+      const row = await marketing.updateCampaign(id, campaignInputShape(patch));
+      if (!row) throw new AdminError("not_found", "Campanha não encontrada.");
+      await marketing.bumpAllHouseholds();
+      return { result: { ok: true }, after: campaignInputShape(patch) };
+    },
+  );
+}
+
+export async function setCampaignActive(
+  actor: Actor,
+  input: { id: string; active: boolean; reason: string },
+) {
+  return guarded(
+    actor,
+    "marketing.write",
+    {
+      action: input.active ? "campaign.activate" : "campaign.deactivate",
+      targetType: "campaign",
+      targetId: input.id,
+      reason: input.reason,
+    },
+    async () => {
+      const row = await marketing.setCampaignActive(input.id, input.active);
+      if (!row) throw new AdminError("not_found", "Campanha não encontrada.");
+      await marketing.bumpAllHouseholds();
+      return {
+        result: { ok: true },
+        after: { active: input.active },
+      };
+    },
+  );
+}
+
+export async function deleteCampaign(
+  actor: Actor,
+  input: { id: string; reason: string },
+) {
+  return guarded(
+    actor,
+    "marketing.write",
+    {
+      action: "campaign.delete",
+      targetType: "campaign",
+      targetId: input.id,
+      reason: input.reason,
+    },
+    async () => {
+      const ok = await marketing.deleteCampaignIfUnused(input.id);
+      if (!ok) {
+        throw new AdminError(
+          "conflict",
+          "Esta campanha já foi exibida a alguém; desative em vez de excluir (mantém as estatísticas).",
+        );
+      }
+      await marketing.bumpAllHouseholds();
+      return { result: { ok: true } };
     },
   );
 }

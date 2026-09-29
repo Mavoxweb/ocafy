@@ -13,6 +13,7 @@ import {
   TradeInbox,
   usePriorityList,
 } from "@/components/hoje/today-parts";
+import { CampaignBannerSlot } from "@/components/marketing/campaign";
 import { RoutineBlock, TaskTile } from "@/components/tasks/task-parts";
 import { Panel } from "@/components/ui/primitives";
 import { useNow } from "@/lib/hooks";
@@ -41,6 +42,7 @@ export default function TodayPage() {
       <TodayHero />
       <PeopleCards />
       <PlanBanner />
+      <CampaignBannerSlot />
       <InviteCard />
       <ReminderNudge />
       <AssignedTasks />

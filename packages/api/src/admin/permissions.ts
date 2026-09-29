@@ -12,6 +12,7 @@ export type Permission =
   | "flags.write"
   | "lgpd.handle"
   | "lgpd.delete"
+  | "marketing.write"
   | "staff.manage";
 
 const ALL: Permission[] = [
@@ -24,6 +25,7 @@ const ALL: Permission[] = [
   "flags.write",
   "lgpd.handle",
   "lgpd.delete",
+  "marketing.write",
   "staff.manage",
 ];
 

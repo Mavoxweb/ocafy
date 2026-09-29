@@ -47,6 +47,7 @@ import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { checkoutUrls, resolveFromRows } from "./entitlements";
 import { flag } from "./flags";
 import { hasAcceptedCurrent } from "./legal";
+import { pickCampaignFor } from "./marketing";
 import { prefsFromRow } from "./notifications";
 import { petOf, profileOf, roomsOf } from "./plan";
 import { pushConfigured, vapidPublicKey } from "./push";
@@ -187,6 +188,16 @@ export interface Snapshot {
     /** Links de pagamento (nulo = ainda não configurado). */
     checkout: Record<BillingInterval, string | null>;
   };
+  /** Aviso ou promoção do time (painel admin). No máximo uma por vez, ou nenhuma. */
+  campaign: {
+    id: string;
+    title: string;
+    body: string;
+    ctaLabel: string | null;
+    ctaUrl: string | null;
+    kind: "modal" | "banner";
+    dismissible: boolean;
+  } | null;
   /** Convite ativo (só aparece enquanto a casa tem menos de 2 membros). */
   invite: { code: string; expiresAt: string } | null;
 }
@@ -309,6 +320,9 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
 
   const member = memberRows.find((m) => m.userId === userId);
   if (!member || !household) return null;
+
+  const resolvedPlan = resolveFromRows(grantRows, subRows, now);
+  const campaign = await pickCampaignFor(member.id, resolvedPlan.plan, now);
 
   const overrides: Snapshot["overrides"] = {};
   for (const o of overrideRows) {
@@ -474,22 +488,30 @@ export async function loadSnapshot(userId: string): Promise<Snapshot | null> {
     suspended: household.suspendedAt
       ? { reason: household.suspendedReason }
       : null,
-    plan: (() => {
-      const r = resolveFromRows(grantRows, subRows, now);
-      return {
-        id: r.plan,
-        source: r.source,
-        expiresAt: r.expiresAt,
-        trialEndsAt: r.trialEndsAt,
-        pastDue: r.pastDue,
-        entitlements: r.entitlements,
-        usage: {
-          pets: petRows.length,
-          projects: household.officeProject ? 1 : 0,
-        },
-        checkout: checkoutUrls(household.id),
-      };
-    })(),
+    plan: {
+      id: resolvedPlan.plan,
+      source: resolvedPlan.source,
+      expiresAt: resolvedPlan.expiresAt,
+      trialEndsAt: resolvedPlan.trialEndsAt,
+      pastDue: resolvedPlan.pastDue,
+      entitlements: resolvedPlan.entitlements,
+      usage: {
+        pets: petRows.length,
+        projects: household.officeProject ? 1 : 0,
+      },
+      checkout: checkoutUrls(household.id),
+    },
+    campaign: campaign
+      ? {
+          id: campaign.id,
+          title: campaign.title,
+          body: campaign.body,
+          ctaLabel: campaign.ctaLabel,
+          ctaUrl: campaign.ctaUrl,
+          kind: campaign.kind,
+          dismissible: campaign.dismissible,
+        }
+      : null,
     invite: invite
       ? { code: invite.code, expiresAt: iso(invite.expiresAt) }
       : null,

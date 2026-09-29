@@ -1,6 +1,7 @@
 "use client";
 
 import { LegalGate } from "@/components/legal/legal-gate";
+import { CampaignModalSlot } from "@/components/marketing/campaign";
 import { NowProvider } from "@/lib/hooks";
 import { useAppState } from "@/lib/store";
 import { refresh } from "@/lib/sync";
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ToastHost />
           <FxLayer />
           <SheetHost />
+          <CampaignModalSlot />
         </NowProvider>
       )}
     </>

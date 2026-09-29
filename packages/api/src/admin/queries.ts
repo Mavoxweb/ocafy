@@ -387,3 +387,5 @@ export const recentNotificationFailures = (limit = 30) =>
     )
     .orderBy(desc(notificationLog.createdAt))
     .limit(limit);
+
+export { getCampaign, listCampaignsWithStats } from "../marketing";

@@ -185,6 +185,16 @@ export interface AppState {
   notifications: NotificationsState;
   /** Casa suspensa pelo administrador (só leitura). */
   suspended: { reason: string | null } | null;
+  /** Aviso ou promoção do time (painel admin). No máximo um por vez. */
+  campaign: {
+    id: string;
+    title: string;
+    body: string;
+    ctaLabel: string | null;
+    ctaUrl: string | null;
+    kind: "modal" | "banner";
+    dismissible: boolean;
+  } | null;
   legal: LegalState;
   plan: PlanState;
   rewards: Reward[];
@@ -221,6 +231,7 @@ export const EMPTY_STATE: AppState = {
   office: { start: null, done: {}, steps: {}, inventory: [] },
   shopping: { items: [], cadence: null, day: null, trips: [] },
   suspended: null,
+  campaign: null,
   legal: { version: LEGAL_VERSION, accepted: true, gate: false },
   plan: {
     id: "free",

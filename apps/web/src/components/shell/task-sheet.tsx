@@ -1,11 +1,13 @@
 "use client";
 
+import { IconHelp } from "@/components/ui/icons";
 import { Chip, NumberInput, StatusPill } from "@/components/ui/primitives";
 import { Sheet, SheetHead } from "@/components/ui/sheet";
 import {
   assignTask,
   completeTask,
   requestTrade,
+  respondTrade,
   setFrequency,
   togglePause,
 } from "@/lib/actions";
@@ -14,9 +16,11 @@ import { useNow } from "@/lib/hooks";
 import {
   assigneeOf,
   currentMember,
+  incomingTradeFor,
   isOff,
   isRecurring,
   memberName,
+  myTradesFor,
   otherAdults,
   statusLabel,
   suitableFor,
@@ -49,9 +53,8 @@ export function TaskSheet({ id }: { id: string }) {
       ? "Ainda sem registro"
       : `Última vez ${daysAgoPhrase(st.d)}, por ${memberName(s, st.last.who)}`;
   const how = t.how;
-  const pendingTrade = s.trades.some(
-    (x) => x.taskId === id && x.status === "pending",
-  );
+  const incoming = incomingTradeFor(s, id);
+  const { pending: pendingFor, accepted: acceptedFor } = myTradesFor(s, id);
 
   const kids = s.members.filter((m) => m.kind === "profile");
   const kidFor = whoKid ?? (assignee?.kind === "profile" ? assignee.id : null);
@@ -80,6 +83,33 @@ export function TaskSheet({ id }: { id: string }) {
         <div className="how">
           <b>Como fazer</b>
           <p>{how}</p>
+        </div>
+      )}
+      {incoming && (
+        <div className="ask-banner">
+          <IconHelp size={22} />
+          <div className="flex-1">
+            <b>{memberName(s, incoming.requesterId)} pediu sua ajuda</b>
+            <p className="meta mb-0">
+              Você decide — pode aceitar ou recusar, sem problema.
+            </p>
+            <div className="frow">
+              <button
+                type="button"
+                className="btn btn-small btn-primary"
+                onClick={() => respondTrade(incoming.id, true)}
+              >
+                Aceitar
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => respondTrade(incoming.id, false)}
+              >
+                Recusar
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {kids.length > 0 && (
@@ -175,11 +205,52 @@ export function TaskSheet({ id }: { id: string }) {
               );
             })}
           </div>
-          {t.suitableFrom && (
-            <p className="meta">
-              Sugestão: crianças a partir de {AGE_BANDS[t.suitableFrom].label}.
-            </p>
-          )}
+          <p className="meta">
+            {t.suitableFrom
+              ? `Sugestão: crianças a partir de ${AGE_BANDS[t.suitableFrom].label}. `
+              : ""}
+            É só um lembrete de quem costuma cuidar — qualquer pessoa pode
+            marcar como feito.
+          </p>
+        </>
+      )}
+
+      {adults.length > 0 && (
+        <>
+          <h4>
+            <span className="help-chip">
+              <IconHelp size={16} /> Precisa de uma força?
+            </span>
+          </h4>
+          <p className="meta">
+            Peça ajuda para hoje — a pessoa decide se aceita, não é uma
+            atribuição.
+          </p>
+          <div className="chips wrap">
+            {adults.map((a) => {
+              const isPending = pendingFor.has(a.id);
+              const isAccepted = acceptedFor.has(a.id);
+              return (
+                <Chip
+                  key={a.id}
+                  pressed={isPending || isAccepted}
+                  disabled={isPending || isAccepted}
+                  onClick={() =>
+                    requestTrade(id, adults.length > 1 ? a.id : undefined)
+                  }
+                >
+                  <span className="help-chip">
+                    {isAccepted && "✓ "}
+                    {isAccepted
+                      ? `${a.name} topou ajudar`
+                      : isPending
+                        ? `Aguardando ${a.name}`
+                        : `Pedir ajuda a ${a.name}`}
+                  </span>
+                </Chip>
+              );
+            })}
+          </div>
         </>
       )}
 
@@ -197,23 +268,8 @@ export function TaskSheet({ id }: { id: string }) {
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-5">
-        {adults.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            className="link"
-            disabled={pendingTrade}
-            onClick={() =>
-              requestTrade(id, adults.length > 1 ? a.id : undefined)
-            }
-          >
-            {pendingTrade
-              ? `Pedido já enviado${adults.length > 1 ? "" : ` para ${a.name}`}`
-              : `Pedir para ${a.name} fazer`}
-          </button>
-        ))}
-        {isRecurring(t) && (
+      {isRecurring(t) && (
+        <div className="mt-2">
           <button
             type="button"
             className="link"
@@ -224,8 +280,8 @@ export function TaskSheet({ id }: { id: string }) {
           >
             {off ? "Reativar esta tarefa" : "Pausar esta tarefa"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </Sheet>
   );
 }

@@ -1,6 +1,7 @@
 import { publicProcedure, router } from "../trpc";
 import { accountRouter } from "./account";
 import { agendaRouter } from "./agenda";
+import { campaignRouter } from "./campaign";
 import { householdRouter } from "./household";
 import { litterRouter } from "./litter";
 import { mealsRouter } from "./meals";
@@ -19,6 +20,7 @@ export const appRouter = router({
   })),
   account: accountRouter,
   agenda: agendaRouter,
+  campaign: campaignRouter,
   household: householdRouter,
   notifications: notificationsRouter,
   tasks: tasksRouter,

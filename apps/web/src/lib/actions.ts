@@ -679,7 +679,7 @@ export function requestTrade(taskId: string, toMemberId?: string) {
       ...(toMemberId ? { toMemberId } : {}),
     }),
   );
-  closeSheet();
+  // Não fecha o modal: a pessoa vê o chip virar "Aguardando" antes de decidir o que fazer.
   toast(`Pedido enviado para ${other.name}: ${taskTitle(s, t)}`);
 }
 
@@ -921,6 +921,32 @@ export function removeAbsence(id: string) {
   });
   void mutate(() => trpc.agenda.removeAbsence.mutate({ id }));
 }
+
+/* ================= marketing interno ================= */
+
+/**
+ * Registra o que a pessoa fez com o aviso/promoção que a casa está vendo, e some com ele na hora
+ * (sem esperar o próximo poll). "shown" só avisa o servidor, fora do fluxo de `mutate()`: por esse
+ * fluxo, a reconciliação automática (350ms depois) buscaria um snapshot novo sem a campanha (um
+ * popup já "visto" some da lista no servidor) e fecharia o popup sozinho antes da pessoa lê-lo.
+ */
+function acknowledgeCampaign(
+  id: string,
+  action: "shown" | "clicked" | "dismissed",
+) {
+  if (action === "shown") {
+    trpc.campaign.acknowledge.mutate({ id, action }).catch(() => {});
+    return;
+  }
+  store.set((s) => (s.campaign?.id === id ? { ...s, campaign: null } : s));
+  void mutate(() => trpc.campaign.acknowledge.mutate({ id, action }));
+}
+
+export const markCampaignShown = (id: string) =>
+  acknowledgeCampaign(id, "shown");
+export const clickCampaign = (id: string) => acknowledgeCampaign(id, "clicked");
+export const dismissCampaign = (id: string) =>
+  acknowledgeCampaign(id, "dismissed");
 
 /* ================= privacidade (LGPD) ================= */
 

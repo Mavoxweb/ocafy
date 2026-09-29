@@ -57,6 +57,7 @@ function fromSnapshot(d: Snapshot): AppState {
     shopping: d.shopping,
     notifications: d.notifications,
     suspended: d.suspended,
+    campaign: d.campaign,
     legal: d.legal,
     plan: d.plan,
     rewards: d.rewards,
